@@ -1,0 +1,111 @@
+"use client";
+
+import { useState, type ComponentType, type ReactNode } from "react";
+import { CalendarDays, Contact, FileText, ImageIcon, Link2, Mail, MapPin, MessageCircle, MessageSquare, Phone, Type, Wifi } from "lucide-react";
+import QRPreview from "./QRPreview";
+import FileForm from "./FileForm";
+import { ContactForm, EmailForm, EventForm, LinkForm, LocationForm, PhoneForm, SmsForm, TextForm, WhatsAppForm, WifiForm } from "./forms";
+import type { OnResult, Result } from "@/lib/payloads";
+
+type Mode = {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  blurb: string;
+  Form: ComponentType<{ onResult: OnResult }>;
+};
+
+const CONTENT: Mode[] = [
+  { id: "link", label: "Link", icon: <Link2 size={18} />, blurb: "Any URL — app links open straight in their app.", Form: LinkForm },
+  { id: "text", label: "Text", icon: <Type size={18} />, blurb: "Plain text, or send it to WhatsApp, Mail, Translate…", Form: TextForm },
+  {
+    id: "photo",
+    label: "Photo",
+    icon: <ImageIcon size={18} />,
+    blurb: "Read the text in a photo (OCR), or share the photo itself.",
+    Form: (p) => <FileForm kind="photo" {...p} />,
+  },
+  {
+    id: "document",
+    label: "Document",
+    icon: <FileText size={18} />,
+    blurb: "Pull text out of PDFs, Word docs and text files.",
+    Form: (p) => <FileForm kind="document" {...p} />,
+  },
+];
+
+const ACTIONS: Mode[] = [
+  { id: "wifi", label: "Wi‑Fi", icon: <Wifi size={18} />, blurb: "Guests scan and join your network — no typing.", Form: WifiForm },
+  { id: "contact", label: "Contact", icon: <Contact size={18} />, blurb: "Saves a contact card straight into Contacts.", Form: ContactForm },
+  { id: "whatsapp", label: "WhatsApp", icon: <MessageCircle size={18} />, blurb: "Opens a WhatsApp chat with a ready message.", Form: WhatsAppForm },
+  { id: "email", label: "Email", icon: <Mail size={18} />, blurb: "Opens the mail app with a pre-written email.", Form: EmailForm },
+  { id: "phone", label: "Call", icon: <Phone size={18} />, blurb: "Opens the dialer with the number ready.", Form: PhoneForm },
+  { id: "sms", label: "SMS", icon: <MessageSquare size={18} />, blurb: "Opens Messages with recipient and text filled in.", Form: SmsForm },
+  { id: "location", label: "Location", icon: <MapPin size={18} />, blurb: "Drops a pin in Google Maps, Apple Maps or the default app.", Form: LocationForm },
+  { id: "event", label: "Event", icon: <CalendarDays size={18} />, blurb: "Adds an event to the calendar in one tap.", Form: EventForm },
+];
+
+const ALL = [...CONTENT, ...ACTIONS];
+
+function ModeButton({ mode, active, onClick }: { mode: Mode; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-2xl border px-2 py-3 text-xs font-medium transition ${
+        active
+          ? "border-violet-400/50 bg-gradient-to-b from-violet-500/25 to-cyan-500/10 text-white shadow-[0_0_0_3px_rgba(139,92,246,0.12)]"
+          : "border-white/[0.06] bg-white/[0.02] text-slate-400 hover:border-white/20 hover:text-slate-100"
+      }`}
+    >
+      {mode.icon}
+      {mode.label}
+    </button>
+  );
+}
+
+export default function QRGenerator() {
+  const [modeId, setModeId] = useState("link");
+  const [result, setResult] = useState<Result>(null);
+  const mode = ALL.find((m) => m.id === modeId)!;
+
+  const select = (id: string) => {
+    if (id === modeId) return;
+    setResult(null);
+    setModeId(id);
+  };
+
+  return (
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
+        <section className="card p-5 sm:p-6">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Content</p>
+          <div className="grid grid-cols-4 gap-2">
+            {CONTENT.map((m) => (
+              <ModeButton key={m.id} mode={m} active={m.id === modeId} onClick={() => select(m.id)} />
+            ))}
+          </div>
+          <p className="mb-2 mt-5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Smart actions</p>
+          <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+            {ACTIONS.map((m) => (
+              <ModeButton key={m.id} mode={m} active={m.id === modeId} onClick={() => select(m.id)} />
+            ))}
+          </div>
+
+          <div className="mt-6 border-t border-white/10 pt-6">
+            <div className="mb-5 flex items-center gap-3">
+              <span className="grid size-9 place-items-center rounded-xl bg-white/[0.06] text-violet-300">{mode.icon}</span>
+              <div>
+                <h2 className="font-semibold">{mode.label}</h2>
+                <p className="text-sm text-slate-400">{mode.blurb}</p>
+              </div>
+            </div>
+            <mode.Form key={mode.id} onResult={setResult} />
+          </div>
+        </section>
+
+        <aside className="lg:sticky lg:top-6">
+          <QRPreview result={result} />
+        </aside>
+    </div>
+  );
+}
