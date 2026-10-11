@@ -110,19 +110,21 @@ export default function Scanner() {
         <div className="grid grid-cols-2 gap-1 rounded-2xl bg-black/30 p-1">
           {(
             [
-              { id: "camera", label: "Scan with camera", icon: <Camera size={16} /> },
-              { id: "upload", label: "Upload image", icon: <ImageUp size={16} /> },
+              { id: "camera", label: "Scan with camera", short: "Camera", icon: <Camera size={16} /> },
+              { id: "upload", label: "Upload image", short: "Upload", icon: <ImageUp size={16} /> },
             ] as const
           ).map((s) => (
             <button
               key={s.id}
               type="button"
               onClick={() => setSource(s.id)}
-              className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium transition ${
+              className={`flex min-h-11 min-w-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-xl px-2 py-2.5 text-sm font-medium leading-none transition ${
                 source === s.id ? "bg-gradient-to-r from-violet-500/40 to-cyan-500/30 text-white shadow" : "text-slate-400 hover:text-white"
               }`}
             >
-              {s.icon} {s.label}
+              <span className="shrink-0">{s.icon}</span>
+              <span className="sm:hidden">{s.short}</span>
+              <span className="hidden sm:inline">{s.label}</span>
             </button>
           ))}
         </div>

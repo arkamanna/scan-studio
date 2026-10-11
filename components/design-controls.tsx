@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeftRight, ImagePlus, LoaderCircle, X } from "lucide-react";
+import { ArrowLeftRight, ImagePlus, LoaderCircle, Pipette, X } from "lucide-react";
 import { Field } from "./ui";
 import type { Fill } from "@/lib/qr-design";
 import { imageFileToDataUrl } from "@/lib/raster";
@@ -66,64 +66,144 @@ export function Segmented<T extends string>({ options, value, onChange }: { opti
   );
 }
 
-/** Native colour wheel plus an editable hex value. */
+type Hsv = { h: number; s: number; v: number };
+
+function hexToHsv(hex: string): Hsv {
+  const n = parseInt(hex.slice(1), 16);
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >> 8) & 255) / 255;
+  const b = (n & 255) / 255;
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  let h = 0;
+  if (d) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h = (h * 60 + 360) % 360;
+  }
+  return { h, s: max ? d / max : 0, v: max };
+}
+
+function hsvToHex({ h, s, v }: Hsv) {
+  const f = (n: number) => {
+    const k = (n + h / 60) % 6;
+    return Math.round((v - v * s * Math.max(0, Math.min(k, 4 - k, 1))) * 255);
+  };
+  return `#${[f(5), f(3), f(1)].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+}
+
+const HUE_RING = "conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)";
+
+/** Touch-friendly HSV colour wheel: hue around the disc, saturation towards the edge, brightness on the slider. */
+function ColorWheel({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const disc = useRef<HTMLDivElement>(null);
+  const [hsv, setHsv] = useState(() => hexToHsv(value));
+
+  useEffect(() => {
+    setHsv((cur) => (hsvToHex(cur) === value.toLowerCase() ? cur : hexToHsv(value)));
+  }, [value]);
+
+  const update = (next: Hsv) => {
+    setHsv(next);
+    onChange(hsvToHex(next));
+  };
+
+  const pick = (e: React.PointerEvent) => {
+    const rect = disc.current!.getBoundingClientRect();
+    const r = rect.width / 2;
+    const dx = e.clientX - rect.left - r;
+    const dy = e.clientY - rect.top - r;
+    const h = ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360;
+    update({ h, s: Math.min(1, Math.hypot(dx, dy) / r), v: hsv.v || 1 });
+  };
+
+  const rad = (hsv.h * Math.PI) / 180;
+  const full = hsvToHex({ h: hsv.h, s: hsv.s, v: 1 });
+
+  return (
+    <div className="space-y-3 rounded-xl border border-white/10 bg-black/40 p-3">
+      <div
+        ref={disc}
+        className="relative mx-auto aspect-square w-full max-w-[220px] cursor-crosshair touch-none select-none rounded-full"
+        style={{ background: `radial-gradient(circle closest-side, #fff, transparent), ${HUE_RING}` }}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          pick(e);
+        }}
+        onPointerMove={(e) => e.buttons && pick(e)}
+      >
+        <div className="pointer-events-none absolute inset-0 rounded-full bg-black" style={{ opacity: 1 - hsv.v }} />
+        <span
+          className="pointer-events-none absolute size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.5),0_2px_6px_rgba(0,0,0,0.5)]"
+          style={{ left: `${50 + 50 * hsv.s * Math.sin(rad)}%`, top: `${50 - 50 * hsv.s * Math.cos(rad)}%`, background: value }}
+        />
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={Math.round(hsv.v * 100)}
+        onChange={(e) => update({ ...hsv, v: Number(e.target.value) / 100 })}
+        className="h-3 w-full cursor-pointer appearance-none rounded-full [&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-transparent [&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:shadow"
+        style={{ background: `linear-gradient(to right, #000, ${full})` }}
+        aria-label="Brightness"
+      />
+    </div>
+  );
+}
+
+/** Colour swatch + editable hex value, with a built-in colour wheel and the system picker as a fallback. */
 export function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   const [text, setText] = useState(value);
-  const picker = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
   useEffect(() => setText(value), [value]);
-
-  const openWheel = () => {
-    const input = picker.current;
-    if (!input) return;
-    try {
-      input.showPicker();
-    } catch {
-      input.click();
-    }
-  };
 
   return (
     <Field label={label}>
-      <div className="relative flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 p-1.5 focus-within:border-violet-400/60">
-        <input
-          ref={picker}
-          type="color"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          tabIndex={-1}
-          aria-hidden="true"
-          className="pointer-events-none absolute bottom-0 left-2 size-px opacity-0"
-        />
-        <button
-          type="button"
-          onClick={openWheel}
-          className="size-8 shrink-0 cursor-pointer rounded-lg border border-white/20 transition hover:scale-105"
-          style={{ background: value }}
-          aria-label={`${label}: open colour wheel`}
-          title="Open colour wheel"
-        />
-        <input
-          value={text}
-          spellCheck={false}
-          maxLength={7}
-          onChange={(e) => {
-            const v = e.target.value.startsWith("#") ? e.target.value : `#${e.target.value}`;
-            setText(v);
-            if (HEX.test(v)) onChange(v.toLowerCase());
-          }}
-          onBlur={() => setText(value)}
-          className="w-full min-w-0 bg-transparent font-mono text-sm uppercase text-slate-200 outline-none"
-        />
-        <button
-          type="button"
-          onClick={openWheel}
-          className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full transition hover:scale-110"
-          style={{ background: "conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)" }}
-          aria-label="Open colour wheel"
-          title="Open colour wheel"
-        >
-          <span className="size-3 rounded-full border border-white/70" style={{ background: value }} />
-        </button>
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 p-1.5 focus-within:border-violet-400/60">
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="size-8 shrink-0 cursor-pointer rounded-lg border border-white/20"
+            style={{ background: value }}
+            aria-label={`${label}: ${open ? "close" : "open"} colour wheel`}
+          />
+          <input
+            value={text}
+            spellCheck={false}
+            maxLength={7}
+            onChange={(e) => {
+              const v = e.target.value.startsWith("#") ? e.target.value : `#${e.target.value}`;
+              setText(v);
+              if (HEX.test(v)) onChange(v.toLowerCase());
+            }}
+            onBlur={() => setText(value)}
+            className="w-full min-w-0 bg-transparent font-mono text-sm uppercase text-slate-200 outline-none"
+            aria-label={`${label} hex value`}
+          />
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className={`grid size-8 shrink-0 cursor-pointer place-items-center rounded-full transition hover:scale-110 ${open ? "ring-2 ring-violet-400" : ""}`}
+            style={{ background: HUE_RING }}
+            aria-label={open ? "Close colour wheel" : "Open colour wheel"}
+            aria-expanded={open}
+            title="Colour wheel"
+          >
+            <span className="size-3 rounded-full border border-white/70" style={{ background: value }} />
+          </button>
+        </div>
+        {open && (
+          <>
+            <ColorWheel value={value} onChange={onChange} />
+            <label className="relative flex cursor-pointer items-center justify-center gap-1.5 rounded-lg py-1 text-xs text-slate-400 hover:text-white">
+              <Pipette size={13} /> System colour picker
+              <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 size-full cursor-pointer opacity-0" />
+            </label>
+          </>
+        )}
       </div>
     </Field>
   );
@@ -169,18 +249,18 @@ export function FillPicker({ label, value, onChange }: { label: string; value: F
           ))}
         </div>
       )}
-      <div className={`grid items-end gap-3 ${gradient ? "grid-cols-[1fr_auto_1fr]" : "grid-cols-1"}`}>
+      <div className={`grid items-start gap-3 ${gradient ? "sm:grid-cols-[1fr_auto_1fr]" : ""}`}>
         <ColorField label={gradient ? "Start colour" : "Colour"} value={value.color} onChange={(color) => set({ color })} />
         {gradient && (
           <>
             <button
               type="button"
-              className="btn-ghost mb-0.5 px-2.5 py-2.5"
+              className="btn-ghost justify-self-start px-2.5 py-2.5 text-xs sm:mt-[26px]"
               onClick={() => set({ color: value.color2, color2: value.color })}
               title="Swap colours"
               aria-label="Swap colours"
             >
-              <ArrowLeftRight size={15} />
+              <ArrowLeftRight size={15} /> <span className="sm:hidden">Swap colours</span>
             </button>
             <ColorField label="End colour" value={value.color2} onChange={(color2) => set({ color2 })} />
           </>
