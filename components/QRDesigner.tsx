@@ -1,6 +1,6 @@
 "use client";
 
-import { Palette, RotateCcw } from "lucide-react";
+import { Check, Palette, RotateCcw } from "lucide-react";
 import { CollapsibleCard, ColorField, FillPicker, ImagePicker, ShapeGrid, Slider } from "./design-controls";
 import { Field, Input } from "./ui";
 import {
@@ -71,6 +71,12 @@ const THEMES: { name: string; design: Partial<QrDesign> }[] = [
   },
 ];
 
+const THEME_KEYS = ["dots", "frame", "ball", "eyeColor", "background", "transparent"] as const;
+const sameFill = (a: QrDesign["fill"], b: QrDesign["fill"]) =>
+  a.type === b.type && a.color === b.color && (a.type === "solid" || (a.color2 === b.color2 && (a.type === "radial" || a.angle === b.angle)));
+const isActiveTheme = (design: QrDesign, theme: Partial<QrDesign>) =>
+  THEME_KEYS.every((k) => theme[k] === undefined || theme[k] === design[k]) && (!theme.fill || sameFill(theme.fill, design.fill));
+
 const thumbnail = (design: QrDesign, id: string) => renderQr("Scan Studio", "L", { ...design, logo: null, caption: "" }, id).svg;
 
 export default function QRDesigner({ design, onChange }: { design: QrDesign; onChange: (d: QrDesign) => void }) {
@@ -78,8 +84,8 @@ export default function QRDesigner({ design, onChange }: { design: QrDesign; onC
 
   return (
     <CollapsibleCard
-      title="Customise design"
-      subtitle="Optional: dot shapes, colours, logo and a caption."
+      title="Design"
+      subtitle="Shapes, colours, logo and a caption. Changes show live in the preview."
       icon={<Palette size={18} />}
       action={
         <button type="button" className="btn-ghost shrink-0 px-3 py-2 text-xs" onClick={() => onChange({ ...DEFAULT_DESIGN, caption: design.caption, logo: design.logo })}>
@@ -91,15 +97,29 @@ export default function QRDesigner({ design, onChange }: { design: QrDesign; onC
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {THEMES.map((t) => {
             const preview = { ...design, ...t.design } as QrDesign;
+            const active = isActiveTheme(design, t.design);
             return (
               <button
                 key={t.name}
                 type="button"
                 onClick={() => set(t.design)}
-                className="group flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border border-white/[0.06] bg-white/[0.02] p-2 transition hover:border-violet-400/50"
+                aria-pressed={active}
+                className={`group relative flex cursor-pointer flex-col items-center gap-2 rounded-2xl border p-2.5 transition ${
+                  active
+                    ? "border-violet-400/70 bg-gradient-to-b from-violet-500/25 to-cyan-500/10 shadow-[0_0_0_3px_rgba(139,92,246,0.18)]"
+                    : "border-white/[0.06] bg-white/[0.02] hover:-translate-y-0.5 hover:border-white/25"
+                }`}
               >
-                <span className="block size-14 overflow-hidden rounded-lg [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: thumbnail(preview, `theme-${t.name}`) }} />
-                <span className="text-[11px] text-slate-400 group-hover:text-white">{t.name}</span>
+                {active && (
+                  <span className="absolute -right-1.5 -top-1.5 grid size-5 place-items-center rounded-full bg-violet-500 text-white shadow ring-2 ring-[#0b0d14]">
+                    <Check size={12} strokeWidth={3} />
+                  </span>
+                )}
+                <span
+                  className="block aspect-square w-full max-w-16 overflow-hidden rounded-xl shadow-md shadow-black/40 ring-1 ring-white/10 [&>svg]:size-full"
+                  dangerouslySetInnerHTML={{ __html: thumbnail(preview, `theme-${t.name}`) }}
+                />
+                <span className={`text-xs font-medium ${active ? "text-white" : "text-slate-400 group-hover:text-white"}`}>{t.name}</span>
               </button>
             );
           })}

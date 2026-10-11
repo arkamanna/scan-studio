@@ -9,6 +9,8 @@ type Facing = "user" | "environment";
 type CameraChoice = { deviceId?: string; facing?: Facing };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sideOf = (label: string): Facing | null =>
+  /front|user|facetime|selfie/i.test(label) ? "user" : /back|rear|environment|world/i.test(label) ? "environment" : null;
 
 /** A code must leave the frame for this long before it counts as a new scan. */
 const REPEAT_WINDOW_MS = 1500;
@@ -52,6 +54,7 @@ export default function CameraScanner({
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string>();
   const [facing, setFacing] = useState<Facing>("environment");
+  const lastRequestRef = useRef<{ choices: CameraChoice[]; avoid?: string } | null>(null);
   const [torch, setTorch] = useState<{ supported: boolean; on: boolean }>({ supported: false, on: false });
 
   const stop = useCallback(() => {
@@ -103,25 +106,39 @@ export default function CameraScanner({
     osc.stop(ctx.currentTime + 0.12);
   };
 
-  /** Asks for the chosen camera; exact matches first, then looser constraints (iPhones reject some exact requests). */
+  /**
+   * Asks for one camera: exact match first, then looser constraints (iPhones reject some exact requests).
+   * "Busy" errors are retried because phones release the previous camera asynchronously.
+   */
   const openStream = async ({ deviceId: id, facing: face }: CameraChoice) => {
     const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
     const attempts: MediaTrackConstraints[] = id
-      ? [{ deviceId: { exact: id }, ...size }, { deviceId: { exact: id } }, { deviceId: id }]
-      : [{ facingMode: { exact: face ?? "environment" }, ...size }, { facingMode: { ideal: face ?? "environment" }, ...size }, {}];
+      ? [{ deviceId: { exact: id }, ...size }, { deviceId: { exact: id } }]
+      : [{ facingMode: { exact: face ?? "environment" }, ...size }, { facingMode: face ?? "environment" }];
     let lastError: unknown;
     for (const video of attempts) {
-      try {
-        return await navigator.mediaDevices.getUserMedia({ audio: false, video });
-      } catch (e) {
-        lastError = e;
-        if ((e as DOMException)?.name === "NotAllowedError") break;
+      for (const wait of [0, 400, 900]) {
+        if (wait) await sleep(wait);
+        try {
+          return await navigator.mediaDevices.getUserMedia({ audio: false, video });
+        } catch (e) {
+          lastError = e;
+          const name = (e as DOMException)?.name;
+          if (name === "NotAllowedError" || name === "SecurityError") throw e;
+          if (name !== "NotReadableError" && name !== "AbortError") break;
+        }
       }
     }
     throw lastError;
   };
 
-  const start = async (choice: CameraChoice = {}) => {
+  /**
+   * Opens the first camera in `choices` that works. With `avoid`, a camera with that device id is skipped,
+   * so switching never silently lands back on the camera that was already open.
+   */
+  const start = async (choices: CameraChoice | CameraChoice[] = {}, avoid?: string) => {
+    const list = Array.isArray(choices) ? choices : [choices];
+    lastRequestRef.current = { choices: list, avoid };
     setError(null);
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       setInsecure(true);
@@ -134,36 +151,80 @@ export default function CameraScanner({
     } catch {
       /* sound is optional */
     }
-    const hadStream = Boolean(streamRef.current);
-    stop();
     const video = videoRef.current!;
-    video.srcObject = null;
-    // Mobile browsers need a moment to release the previous camera before another one can open.
-    if (hadStream) await sleep(250);
+    const release = async () => {
+      const had = Boolean(streamRef.current);
+      stop();
+      video.srcObject = null;
+      if (had) await sleep(300);
+    };
+
+    await release();
+    let stream: MediaStream | null = null;
+    let lastError: unknown = null;
+    for (const choice of list) {
+      try {
+        const candidate = await openStream(choice);
+        const id = candidate.getVideoTracks()[0]?.getSettings().deviceId;
+        if (avoid && id === avoid && choice !== list[list.length - 1]) {
+          candidate.getTracks().forEach((t) => t.stop());
+          await sleep(300);
+          continue;
+        }
+        stream = candidate;
+        break;
+      } catch (e) {
+        lastError = e;
+        if ((e as DOMException)?.name === "NotAllowedError") break;
+      }
+    }
+
+    if (!stream) {
+      setError(cameraError(lastError));
+      setStatus("error");
+      return;
+    }
+
     try {
-      const stream = await openStream(choice);
       streamRef.current = stream;
       video.srcObject = stream;
       await video.play();
       const track = stream.getVideoTracks()[0];
       const settings = track.getSettings();
       setDeviceId(settings.deviceId);
-      if (settings.facingMode === "user" || settings.facingMode === "environment") setFacing(settings.facingMode);
-      else if (choice.facing) setFacing(choice.facing);
+      const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+      setCameras(devices);
+      const label = devices.find((d) => d.deviceId === settings.deviceId)?.label ?? track.label;
+      setFacing(settings.facingMode === "user" || settings.facingMode === "environment" ? settings.facingMode : (sideOf(label) ?? "environment"));
+      lastRequestRef.current = { choices: [{ deviceId: settings.deviceId }] };
       const caps = (track.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { torch?: boolean; focusMode?: string[] };
       setTorch({ supported: Boolean(caps.torch), on: false });
       if (caps.focusMode?.includes("continuous")) {
         track.applyConstraints({ advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet] }).catch(() => {});
       }
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      setCameras(devices.filter((d) => d.kind === "videoinput"));
       seenRef.current.clear();
       setStatus("scanning");
       getLiveDetector();
     } catch (e) {
+      stop();
       setError(cameraError(e));
       setStatus("error");
     }
+  };
+
+  /** Front/back switch: asks by facing first, then tries every other camera (best label match first). */
+  const flip = () => {
+    const want: Facing = facing === "user" ? "environment" : "user";
+    const others = cameras
+      .filter((c) => c.deviceId && c.deviceId !== deviceId)
+      .sort((a, b) => Number(sideOf(b.label) === want) - Number(sideOf(a.label) === want));
+    start([{ facing: want }, ...others.map((c) => ({ deviceId: c.deviceId }))], deviceId);
+  };
+
+  const retry = () => {
+    const last = lastRequestRef.current;
+    if (last) start(last.choices, last.avoid);
+    else start({ facing });
   };
 
   const toggleTorch = async () => {
@@ -295,7 +356,7 @@ export default function CameraScanner({
                   {status === "error" ? <CameraOff size={28} className="text-amber-300" /> : <Camera size={28} />}
                 </span>
                 {error ? <p className="max-w-sm text-sm text-amber-200">{error}</p> : <p className="max-w-xs text-sm text-slate-400">Point your camera at any QR code or barcode. We’ll ask for camera permission first.</p>}
-                <button type="button" className="btn-primary" onClick={() => start(deviceId ? { deviceId } : { facing })}>
+                <button type="button" className="btn-primary" onClick={retry}>
                   <Camera size={16} /> {error ? "Try again" : "Start camera"}
                 </button>
               </>
@@ -315,12 +376,12 @@ export default function CameraScanner({
       {live && (
         <div className="flex flex-wrap items-center gap-2">
           {cameras.length > 1 && (
-            <button type="button" className="btn-ghost py-2" onClick={() => start({ facing: facing === "user" ? "environment" : "user" })} title="Switch between front and back camera">
+            <button type="button" className="btn-ghost py-2" onClick={flip} title="Switch between front and back camera">
               <SwitchCamera size={16} /> Flip
             </button>
           )}
           {cameras.length > 2 && (
-            <select value={deviceId} onChange={(e) => start({ deviceId: e.target.value })} className="input w-auto min-w-0 max-w-[50%] flex-1 cursor-pointer py-2">
+            <select value={deviceId} onChange={(e) => start({ deviceId: e.target.value }, deviceId)} className="input w-auto min-w-0 max-w-[50%] flex-1 cursor-pointer py-2">
               {cameras.map((c, i) => (
                 <option key={c.deviceId} value={c.deviceId}>
                   {c.label || `Camera ${i + 1}`}
@@ -333,7 +394,7 @@ export default function CameraScanner({
               {torch.on ? <FlashlightOff size={16} /> : <Flashlight size={16} />} {torch.on ? "Light off" : "Light"}
             </button>
           )}
-          <button type="button" className="btn-ghost py-2" onClick={() => start(deviceId ? { deviceId } : { facing })} title="Restart camera">
+          <button type="button" className="btn-ghost py-2" onClick={retry} title="Restart camera">
             <RefreshCw size={16} />
           </button>
           <button

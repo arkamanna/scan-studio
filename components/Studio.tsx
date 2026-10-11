@@ -5,6 +5,7 @@ import { Barcode, QrCode, ScanLine } from "lucide-react";
 import QRGenerator from "./QRGenerator";
 import BarcodeGenerator from "./BarcodeGenerator";
 import Scanner from "./scanner/Scanner";
+import InstallApp from "./InstallApp";
 import Curator from "./Curator";
 
 type Tab = "qr" | "barcode" | "scan";
@@ -56,6 +57,7 @@ export default function Studio() {
             <ScanLine size={22} className="text-white" />
           </span>
           <span className="text-lg font-semibold tracking-tight">Scan Studio</span>
+          <InstallApp />
         </div>
         <h1 className="max-w-2xl text-3xl font-semibold tracking-tight sm:text-5xl">
           {hero.lead} <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">{hero.accent}</span>

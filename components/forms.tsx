@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { LocateFixed } from "lucide-react";
 import { Chips, Field, Input, TargetPicker, TextArea } from "./ui";
+import TextEditor from "./TextEditor";
 import {
   LINK_TARGETS,
   TEXT_TARGETS,
@@ -65,8 +66,8 @@ export function TextForm({ onResult }: FormProps) {
 
   return (
     <div className="space-y-5">
-      <Field label="Text" hint={`${text.length.toLocaleString()} characters`}>
-        <TextArea autoFocus rows={7} placeholder="Type or paste any text…" value={text} onChange={(e) => setText(e.target.value)} />
+      <Field label="Text">
+        <TextEditor value={text} onChange={setText} placeholder="Type or paste any text…" />
       </Field>
       <TargetPicker targets={TEXT_TARGETS} value={target} onChange={setTarget} />
     </div>

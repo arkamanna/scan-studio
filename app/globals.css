@@ -11,6 +11,8 @@ html {
 
 body {
   min-height: 100vh;
+  /* Keeps content clear of the notch / home bar when installed full screen on phones. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   background-color: #070912;
   background-image:
     radial-gradient(60rem 40rem at 10% -10%, rgba(124, 58, 237, 0.25), transparent 60%),

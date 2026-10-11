@@ -240,7 +240,7 @@ export default function BarcodeGenerator() {
           </div>
         </section>
 
-        <CollapsibleCard title="Customise design" subtitle="Optional: colours, a heading and an image above the bars." icon={<Palette size={18} />}>
+        <CollapsibleCard title="Design" subtitle="Colours, a heading and an image above the bars. Changes show live in the preview." icon={<Palette size={18} />}>
 
           <div className="space-y-4">
             <Field label="Quick colours">

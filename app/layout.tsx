@@ -12,12 +12,16 @@ export const metadata: Metadata = {
   authors: [{ name: "Arka Manna", url: "https://www.linkedin.com/in/arka-manna-39012920/" }],
   openGraph: { type: "website", siteName: "Scan Studio", title, description, url: "/" },
   twitter: { card: "summary_large_image", title, description },
+  applicationName: "Scan Studio",
+  appleWebApp: { capable: true, title: "Scan Studio", statusBarStyle: "black-translucent" },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
   themeColor: "#070912",
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
