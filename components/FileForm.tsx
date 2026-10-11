@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CloudUpload, FileText, ImageIcon, LoaderCircle, RotateCcw, ScanText, X } from "lucide-react";
-import { upload } from "@vercel/blob/client";
+import { upload, uploadPresigned } from "@vercel/blob/client";
 import { Chips, Field, Select, TargetPicker, TextArea } from "./ui";
 import { TEXT_TARGETS, type OnResult } from "@/lib/payloads";
 import { DOCUMENT_ACCEPT, extractText } from "@/lib/extract";
@@ -42,13 +42,17 @@ export default function FileForm({ kind, onResult }: { kind: Kind; onResult: OnR
   const [output, setOutput] = useState<Output>("text");
 
   const [uploadsEnabled, setUploadsEnabled] = useState<boolean | null>(null);
+  const [uploadMode, setUploadMode] = useState<"token" | "presigned" | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/config")
       .then((r) => r.json())
-      .then((d) => setUploadsEnabled(Boolean(d.uploadsEnabled)))
+      .then((d) => {
+        setUploadsEnabled(Boolean(d.uploadsEnabled));
+        setUploadMode(d.uploadMode ?? null);
+      })
       .catch(() => setUploadsEnabled(false));
   }, []);
 
@@ -111,7 +115,8 @@ export default function FileForm({ kind, onResult }: { kind: Kind; onResult: OnR
     setUploading(true);
     setError(null);
     try {
-      const blob = await upload(file.name, file, { access: "public", handleUploadUrl: "/api/upload" });
+      const send = uploadMode === "presigned" ? uploadPresigned : upload;
+      const blob = await send(file.name, file, { access: "public", handleUploadUrl: "/api/upload" });
       setUploadedUrl(blob.url);
     } catch (e) {
       setError((e as Error).message || "Upload failed.");
@@ -243,7 +248,7 @@ export default function FileForm({ kind, onResult }: { kind: Kind; onResult: OnR
           {uploadsEnabled === false ? (
             <p>
               File links need <span className="font-medium text-white">Vercel Blob</span> storage. Connect a Blob store to this project in
-              the Vercel dashboard (it sets <code className="text-cyan-300">BLOB_READ_WRITE_TOKEN</code>) and redeploy.
+              the Vercel dashboard (Storage → Blob), then redeploy.
             </p>
           ) : uploadedUrl ? (
             <p className="break-all">
