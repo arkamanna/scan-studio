@@ -1,10 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, CameraOff, Flashlight, FlashlightOff, LoaderCircle, RefreshCw, ScanLine, ShieldAlert, Upload } from "lucide-react";
+import { Camera, CameraOff, Flashlight, FlashlightOff, LoaderCircle, RefreshCw, ScanLine, ShieldAlert, SwitchCamera, Upload } from "lucide-react";
 import { getLiveDetector, type DetectedBarcode as Detected, type Found } from "@/lib/detector";
 
 type Status = "idle" | "starting" | "scanning" | "paused" | "error";
+type Facing = "user" | "environment";
+type CameraChoice = { deviceId?: string; facing?: Facing };
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** A code must leave the frame for this long before it counts as a new scan. */
 const REPEAT_WINDOW_MS = 1500;
@@ -47,6 +51,7 @@ export default function CameraScanner({
   const [insecure, setInsecure] = useState(false);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string>();
+  const [facing, setFacing] = useState<Facing>("environment");
   const [torch, setTorch] = useState<{ supported: boolean; on: boolean }>({ supported: false, on: false });
 
   const stop = useCallback(() => {
@@ -98,7 +103,25 @@ export default function CameraScanner({
     osc.stop(ctx.currentTime + 0.12);
   };
 
-  const start = async (id?: string) => {
+  /** Asks for the chosen camera; exact matches first, then looser constraints (iPhones reject some exact requests). */
+  const openStream = async ({ deviceId: id, facing: face }: CameraChoice) => {
+    const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+    const attempts: MediaTrackConstraints[] = id
+      ? [{ deviceId: { exact: id }, ...size }, { deviceId: { exact: id } }, { deviceId: id }]
+      : [{ facingMode: { exact: face ?? "environment" }, ...size }, { facingMode: { ideal: face ?? "environment" }, ...size }, {}];
+    let lastError: unknown;
+    for (const video of attempts) {
+      try {
+        return await navigator.mediaDevices.getUserMedia({ audio: false, video });
+      } catch (e) {
+        lastError = e;
+        if ((e as DOMException)?.name === "NotAllowedError") break;
+      }
+    }
+    throw lastError;
+  };
+
+  const start = async (choice: CameraChoice = {}) => {
     setError(null);
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       setInsecure(true);
@@ -111,22 +134,22 @@ export default function CameraScanner({
     } catch {
       /* sound is optional */
     }
+    const hadStream = Boolean(streamRef.current);
     stop();
+    const video = videoRef.current!;
+    video.srcObject = null;
+    // Mobile browsers need a moment to release the previous camera before another one can open.
+    if (hadStream) await sleep(250);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          ...(id ? { deviceId: { exact: id } } : { facingMode: { ideal: "environment" } }),
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-      });
+      const stream = await openStream(choice);
       streamRef.current = stream;
-      const video = videoRef.current!;
       video.srcObject = stream;
       await video.play();
       const track = stream.getVideoTracks()[0];
-      setDeviceId(track.getSettings().deviceId);
+      const settings = track.getSettings();
+      setDeviceId(settings.deviceId);
+      if (settings.facingMode === "user" || settings.facingMode === "environment") setFacing(settings.facingMode);
+      else if (choice.facing) setFacing(choice.facing);
       const caps = (track.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { torch?: boolean; focusMode?: string[] };
       setTorch({ supported: Boolean(caps.torch), on: false });
       if (caps.focusMode?.includes("continuous")) {
@@ -272,7 +295,7 @@ export default function CameraScanner({
                   {status === "error" ? <CameraOff size={28} className="text-amber-300" /> : <Camera size={28} />}
                 </span>
                 {error ? <p className="max-w-sm text-sm text-amber-200">{error}</p> : <p className="max-w-xs text-sm text-slate-400">Point your camera at any QR code or barcode. We’ll ask for camera permission first.</p>}
-                <button type="button" className="btn-primary" onClick={() => start(deviceId)}>
+                <button type="button" className="btn-primary" onClick={() => start(deviceId ? { deviceId } : { facing })}>
                   <Camera size={16} /> {error ? "Try again" : "Start camera"}
                 </button>
               </>
@@ -292,7 +315,12 @@ export default function CameraScanner({
       {live && (
         <div className="flex flex-wrap items-center gap-2">
           {cameras.length > 1 && (
-            <select value={deviceId} onChange={(e) => start(e.target.value)} className="input w-auto max-w-[60%] flex-1 cursor-pointer py-2">
+            <button type="button" className="btn-ghost py-2" onClick={() => start({ facing: facing === "user" ? "environment" : "user" })} title="Switch between front and back camera">
+              <SwitchCamera size={16} /> Flip
+            </button>
+          )}
+          {cameras.length > 2 && (
+            <select value={deviceId} onChange={(e) => start({ deviceId: e.target.value })} className="input w-auto min-w-0 max-w-[50%] flex-1 cursor-pointer py-2">
               {cameras.map((c, i) => (
                 <option key={c.deviceId} value={c.deviceId}>
                   {c.label || `Camera ${i + 1}`}
@@ -305,7 +333,7 @@ export default function CameraScanner({
               {torch.on ? <FlashlightOff size={16} /> : <Flashlight size={16} />} {torch.on ? "Light off" : "Light"}
             </button>
           )}
-          <button type="button" className="btn-ghost py-2" onClick={() => start(deviceId)} title="Restart camera">
+          <button type="button" className="btn-ghost py-2" onClick={() => start(deviceId ? { deviceId } : { facing })} title="Restart camera">
             <RefreshCw size={16} />
           </button>
           <button

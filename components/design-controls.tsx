@@ -1,12 +1,45 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeftRight, ImagePlus, LoaderCircle, Pipette, X } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, ImagePlus, LoaderCircle, Pipette, X } from "lucide-react";
 import { Field } from "./ui";
 import type { Fill } from "@/lib/qr-design";
 import { imageFileToDataUrl } from "@/lib/raster";
 
 const HEX = /^#[0-9a-f]{6}$/i;
+
+/** Card with a clickable header that hides its contents until opened. */
+export function CollapsibleCard({
+  title,
+  subtitle,
+  icon,
+  action,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  icon: ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="card overflow-hidden">
+      <div className="flex items-center gap-3 p-5 sm:px-6">
+        <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-violet-500/30 to-cyan-500/20 text-violet-200">{icon}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">{title}</span>
+            <span className="block text-sm text-slate-400">{subtitle}</span>
+          </span>
+          <ChevronDown size={18} className={`shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+        {open && action}
+      </div>
+      {open && <div className="space-y-6 border-t border-white/10 p-5 sm:p-6">{children}</div>}
+    </section>
+  );
+}
 
 export function Slider({
   label,

@@ -1,7 +1,7 @@
 "use client";
 
-import { RotateCcw } from "lucide-react";
-import { ColorField, FillPicker, ImagePicker, ShapeGrid, Slider } from "./design-controls";
+import { Palette, RotateCcw } from "lucide-react";
+import { CollapsibleCard, ColorField, FillPicker, ImagePicker, ShapeGrid, Slider } from "./design-controls";
 import { Field, Input } from "./ui";
 import {
   ballPath,
@@ -77,17 +77,16 @@ export default function QRDesigner({ design, onChange }: { design: QrDesign; onC
   const set = (patch: Partial<QrDesign>) => onChange({ ...design, ...patch });
 
   return (
-    <section className="card space-y-6 p-5 sm:p-6">
-      <div className="flex items-center gap-3">
-        <div>
-          <h2 className="font-semibold">Design</h2>
-          <p className="text-sm text-slate-400">Shapes, colours, logo and a caption. Changes show live in the preview.</p>
-        </div>
-        <button type="button" className="btn-ghost ml-auto shrink-0 px-3 py-2 text-xs" onClick={() => onChange({ ...DEFAULT_DESIGN, caption: design.caption, logo: design.logo })}>
+    <CollapsibleCard
+      title="Customise design"
+      subtitle="Optional: dot shapes, colours, logo and a caption."
+      icon={<Palette size={18} />}
+      action={
+        <button type="button" className="btn-ghost shrink-0 px-3 py-2 text-xs" onClick={() => onChange({ ...DEFAULT_DESIGN, caption: design.caption, logo: design.logo })}>
           <RotateCcw size={14} /> Reset
         </button>
-      </div>
-
+      }
+    >
       <Field label="Quick themes">
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {THEMES.map((t) => {
@@ -188,6 +187,6 @@ export default function QRDesigner({ design, onChange }: { design: QrDesign; onC
           )}
         </div>
       </div>
-    </section>
+    </CollapsibleCard>
   );
 }

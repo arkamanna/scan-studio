@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import JsBarcode from "jsbarcode";
-import { Barcode, Check, Copy, Download, Printer, ScanBarcode, Share2, Shuffle } from "lucide-react";
+import { Barcode, Check, Copy, Download, Palette, Printer, ScanBarcode, Share2, Shuffle } from "lucide-react";
 import { Field, Input } from "./ui";
-import { ColorField, FillPicker, ImagePicker, Slider } from "./design-controls";
+import { CollapsibleCard, ColorField, FillPicker, ImagePicker, Slider } from "./design-controls";
 import { copyPng, printSvg, saveBlob, sharePng } from "@/lib/share";
 import { captionText, gradientDef, paint, type Fill } from "@/lib/qr-design";
 import { svgToPng } from "@/lib/raster";
@@ -240,11 +240,7 @@ export default function BarcodeGenerator() {
           </div>
         </section>
 
-        <section className="card space-y-6 p-5 sm:p-6">
-          <div>
-            <h2 className="font-semibold">Design</h2>
-            <p className="text-sm text-slate-400">Colours, a heading and an image above the bars.</p>
-          </div>
+        <CollapsibleCard title="Customise design" subtitle="Optional: colours, a heading and an image above the bars." icon={<Palette size={18} />}>
 
           <div className="space-y-4">
             <Field label="Quick colours">
@@ -313,7 +309,7 @@ export default function BarcodeGenerator() {
               {image && <Slider label="Image height" value={imageHeight} min={20} max={160} step={4} unit="px" onChange={setImageHeight} />}
             </div>
           </div>
-        </section>
+        </CollapsibleCard>
       </div>
 
       <aside className="lg:sticky lg:top-6">
