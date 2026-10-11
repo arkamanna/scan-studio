@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CameraOff, Flashlight, FlashlightOff, LoaderCircle, RefreshCw, ScanLine, ShieldAlert, Upload } from "lucide-react";
-import { getDetector, type DetectedBarcode as Detected, type Found } from "@/lib/detector";
+import { getLiveDetector, type DetectedBarcode as Detected, type Found } from "@/lib/detector";
 
 type Status = "idle" | "starting" | "scanning" | "paused" | "error";
 
-const REPEAT_WINDOW_MS = 3000;
-const SCAN_INTERVAL_MS = 120;
+/** A code must leave the frame for this long before it counts as a new scan. */
+const REPEAT_WINDOW_MS = 1500;
+const SCAN_INTERVAL_MS = 40;
+/** Longest side of the frame handed to the wasm decoder; bigger frames are slower without reading better. */
+const DECODE_MAX_SIDE = 960;
 
 function cameraError(e: unknown) {
   const name = (e as DOMException)?.name;
@@ -29,6 +32,8 @@ export default function CameraScanner({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const frameRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
   const seenRef = useRef(new Map<string, number>());
@@ -110,7 +115,11 @@ export default function CameraScanner({
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: id ? { deviceId: { exact: id } } : { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: {
+          ...(id ? { deviceId: { exact: id } } : { facingMode: { ideal: "environment" } }),
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
       });
       streamRef.current = stream;
       const video = videoRef.current!;
@@ -118,13 +127,16 @@ export default function CameraScanner({
       await video.play();
       const track = stream.getVideoTracks()[0];
       setDeviceId(track.getSettings().deviceId);
-      const caps = (track.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { torch?: boolean };
+      const caps = (track.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { torch?: boolean; focusMode?: string[] };
       setTorch({ supported: Boolean(caps.torch), on: false });
+      if (caps.focusMode?.includes("continuous")) {
+        track.applyConstraints({ advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet] }).catch(() => {});
+      }
       const devices = await navigator.mediaDevices.enumerateDevices();
       setCameras(devices.filter((d) => d.kind === "videoinput"));
       seenRef.current.clear();
       setStatus("scanning");
-      getDetector();
+      getLiveDetector();
     } catch (e) {
       setError(cameraError(e));
       setStatus("error");
@@ -143,8 +155,11 @@ export default function CameraScanner({
   };
 
   const resume = () => {
-    seenRef.current.clear();
+    // Codes still in front of the camera stay "seen", so they don't instantly re-trigger the last result.
+    const now = Date.now();
+    seenRef.current.forEach((_, raw) => seenRef.current.set(raw, now));
     draw([]);
+    containerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     videoRef.current?.play();
     setStatus("scanning");
   };
@@ -153,14 +168,41 @@ export default function CameraScanner({
     if (status !== "scanning") return;
     let stopped = false;
     let timer: number | undefined;
+    let frame = 0;
+
+    /** Grabs the next region to decode: mostly the centre (where the guide box is), every third frame the whole view. */
+    const grab = (video: HTMLVideoElement) => {
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      const whole = frame++ % 3 === 2;
+      const sw = whole ? vw : Math.round(vw * 0.7);
+      const sh = whole ? vh : Math.round(vh * 0.7);
+      const sx = Math.round((vw - sw) / 2);
+      const sy = Math.round((vh - sh) / 2);
+      const scale = Math.min(1, DECODE_MAX_SIDE / Math.max(sw, sh));
+      const canvas = (frameRef.current ??= document.createElement("canvas"));
+      canvas.width = Math.round(sw * scale);
+      canvas.height = Math.round(sh * scale);
+      canvas.getContext("2d", { willReadFrequently: true })!.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      return { canvas, sx, sy, scale };
+    };
 
     const tick = async () => {
       if (stopped) return;
       const video = videoRef.current;
       if (video && video.readyState >= 2 && video.videoWidth) {
         try {
-          const detector = await getDetector();
-          const codes = await detector.detect(video);
+          const { detector, native } = await getLiveDetector();
+          let codes: Detected[];
+          if (native) {
+            codes = await detector.detect(video);
+          } else {
+            const { canvas, sx, sy, scale } = grab(video);
+            codes = (await detector.detect(canvas)).map((c) => ({
+              ...c,
+              cornerPoints: c.cornerPoints.map((p) => ({ x: sx + p.x / scale, y: sy + p.y / scale })) as Detected["cornerPoints"],
+            }));
+          }
           if (stopped) return;
           draw(codes);
           const now = Date.now();
@@ -193,7 +235,7 @@ export default function CameraScanner({
 
   return (
     <div className="space-y-4">
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-3xl border border-white/10 bg-black sm:aspect-[4/3]">
+      <div ref={containerRef} className="relative aspect-[3/4] w-full scroll-mt-4 overflow-hidden rounded-3xl border border-white/10 bg-black sm:aspect-[4/3]">
         <video ref={videoRef} playsInline muted autoPlay className={`absolute inset-0 size-full object-cover ${live ? "" : "invisible"}`} />
         <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
 

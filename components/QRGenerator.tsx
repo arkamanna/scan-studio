@@ -3,9 +3,11 @@
 import { useState, type ComponentType, type ReactNode } from "react";
 import { CalendarDays, Contact, FileText, ImageIcon, Link2, Mail, MapPin, MessageCircle, MessageSquare, Phone, Type, Wifi } from "lucide-react";
 import QRPreview from "./QRPreview";
+import QRDesigner from "./QRDesigner";
 import FileForm from "./FileForm";
 import { ContactForm, EmailForm, EventForm, LinkForm, LocationForm, PhoneForm, SmsForm, TextForm, WhatsAppForm, WifiForm } from "./forms";
 import type { OnResult, Result } from "@/lib/payloads";
+import { DEFAULT_DESIGN, type QrDesign } from "@/lib/qr-design";
 
 type Mode = {
   id: string;
@@ -67,6 +69,7 @@ function ModeButton({ mode, active, onClick }: { mode: Mode; active: boolean; on
 export default function QRGenerator() {
   const [modeId, setModeId] = useState("link");
   const [result, setResult] = useState<Result>(null);
+  const [design, setDesign] = useState<QrDesign>(DEFAULT_DESIGN);
   const mode = ALL.find((m) => m.id === modeId)!;
 
   const select = (id: string) => {
@@ -77,6 +80,7 @@ export default function QRGenerator() {
 
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
+      <div className="space-y-6">
         <section className="card p-5 sm:p-6">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Content</p>
           <div className="grid grid-cols-4 gap-2">
@@ -102,9 +106,11 @@ export default function QRGenerator() {
             <mode.Form key={mode.id} onResult={setResult} />
           </div>
         </section>
+        <QRDesigner design={design} onChange={setDesign} />
+      </div>
 
         <aside className="lg:sticky lg:top-6">
-          <QRPreview result={result} />
+          <QRPreview result={result} design={design} />
         </aside>
     </div>
   );

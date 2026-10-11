@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import QRCode from "qrcode";
-import { Check, ClipboardCopy, Copy, Download, ExternalLink, QrCode, Share2, Smartphone } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Check, ClipboardCopy, Copy, Download, ExternalLink, Printer, QrCode, Share2, Smartphone } from "lucide-react";
 import type { Result } from "@/lib/payloads";
-import { copyPng, saveBlob, sharePng } from "@/lib/share";
-
-type Ecc = "L" | "M" | "Q" | "H";
+import { copyPng, printSvg, saveBlob, sharePng } from "@/lib/share";
+import { renderQr, type Ecc, type QrDesign } from "@/lib/qr-design";
+import { svgToPng } from "@/lib/raster";
 
 // Maximum bytes per QR code (version 40, byte mode) at each error-correction level.
 const CAPACITY: Record<Ecc, number> = { L: 2953, M: 2331, Q: 1663, H: 1273 };
@@ -16,54 +15,36 @@ const ECC_LEVELS: { id: Ecc; hint: string }[] = [
   { id: "Q", hint: "Sturdy, 25% damage tolerance" },
   { id: "H", hint: "Toughest, 30% damage tolerance" },
 ];
-const PRESETS = [
-  { fg: "#0f172a", bg: "#ffffff" },
-  { fg: "#4c1d95", bg: "#f5f3ff" },
-  { fg: "#0e7490", bg: "#ecfeff" },
-  { fg: "#9d174d", bg: "#fdf2f8" },
-  { fg: "#14532d", bg: "#f0fdf4" },
-  { fg: "#ffffff", bg: "#0f172a" },
-];
 const OPENABLE = /^(https?:|mailto:|tel:|sms:|geo:)/i;
 
-export default function QRPreview({ result }: { result: Result }) {
-  const [fg, setFg] = useState(PRESETS[0].fg);
-  const [bg, setBg] = useState(PRESETS[0].bg);
+export default function QRPreview({ result, design }: { result: Result; design: QrDesign }) {
   const [ecc, setEcc] = useState<Ecc>("M");
-  const [svg, setSvg] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
 
   const payload = result?.payload ?? "";
+  const effectiveEcc: Ecc = design.logo ? "H" : ecc;
   const bytes = useMemo(() => new TextEncoder().encode(payload).length, [payload]);
-  const capacity = CAPACITY[ecc];
+  const capacity = CAPACITY[effectiveEcc];
   const tooBig = bytes > capacity;
-  const options = useMemo(() => ({ errorCorrectionLevel: ecc, margin: 2, color: { dark: fg, light: bg } }), [ecc, fg, bg]);
 
-  useEffect(() => {
-    if (!payload || tooBig) {
-      setSvg(null);
-      setError(tooBig ? "too-big" : null);
-      return;
+  const rendered = useMemo(() => {
+    if (!payload || tooBig) return { code: null, error: tooBig ? "too-big" : null };
+    try {
+      return { code: renderQr(payload, effectiveEcc, design, "qr-preview"), error: null };
+    } catch (e) {
+      return { code: null, error: (e as Error).message };
     }
-    let cancelled = false;
-    QRCode.toString(payload, { ...options, type: "svg" })
-      .then((s) => !cancelled && (setSvg(s), setError(null)))
-      .catch((e: Error) => !cancelled && (setSvg(null), setError(e.message)));
-    return () => {
-      cancelled = true;
-    };
-  }, [payload, options, tooBig]);
+  }, [payload, tooBig, effectiveEcc, design]);
+  const code = rendered.code;
+  const svg = code?.svg ?? null;
+  const error = rendered.error;
 
   const notify = (msg: string) => {
     setFlash(msg);
     setTimeout(() => setFlash(null), 1600);
   };
 
-  const pngBlob = async () => {
-    const url = await QRCode.toDataURL(payload, { ...options, width: 1024 });
-    return (await fetch(url)).blob();
-  };
+  const pngBlob = () => svgToPng(code!.svg, 1024, (1024 * code!.height) / code!.width);
 
   const download = async (type: "png" | "svg") => {
     const blob = type === "png" ? await pngBlob() : new Blob([svg!], { type: "image/svg+xml" });
@@ -87,11 +68,13 @@ export default function QRPreview({ result }: { result: Result }) {
   return (
     <div className="card p-5 sm:p-6">
       <div
-        className="relative mx-auto grid aspect-square w-full max-w-[340px] place-items-center overflow-hidden rounded-3xl p-4 transition-colors"
-        style={{ background: ready ? bg : "rgba(0,0,0,0.25)" }}
+        className={`relative mx-auto grid w-full max-w-[340px] place-items-center overflow-hidden rounded-3xl transition-colors ${ready ? "" : "aspect-square p-4"}`}
+        style={{
+          background: !ready ? "rgba(0,0,0,0.25)" : design.transparent ? "repeating-conic-gradient(#e2e8f0 0 25%, #ffffff 0 50%) 0 0 / 16px 16px" : design.background,
+        }}
       >
         {ready ? (
-          <div className="size-full [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: svg! }} />
+          <div className="w-full [&>svg]:block [&>svg]:h-auto [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: svg! }} />
         ) : (
           <div className="flex flex-col items-center gap-3 px-6 text-center text-slate-500">
             <QrCode size={64} strokeWidth={1.2} className="text-slate-600" />
@@ -124,10 +107,10 @@ export default function QRPreview({ result }: { result: Result }) {
       )}
 
       <div className="mt-5 grid grid-cols-2 gap-2">
-        <button className="btn-primary col-span-2" disabled={!ready} onClick={() => download("png")}>
-          <Download size={16} /> Download PNG
+        <button className="btn-primary" disabled={!ready} onClick={() => download("png")}>
+          <Download size={16} /> PNG
         </button>
-        <button className="btn-ghost" disabled={!ready} onClick={() => download("svg")}>
+        <button className="btn-primary" disabled={!ready} onClick={() => download("svg")}>
           <Download size={16} /> SVG
         </button>
         <button className="btn-ghost" disabled={!ready} onClick={copyImage}>
@@ -145,6 +128,9 @@ export default function QRPreview({ result }: { result: Result }) {
             <ClipboardCopy size={16} /> Copy data
           </button>
         )}
+        <button className="btn-ghost" disabled={!ready} onClick={() => printSvg(svg!, "QR code")}>
+          <Printer size={16} /> Print
+        </button>
       </div>
 
       <div className="mt-6 space-y-5 border-t border-white/10 pt-5">
@@ -172,40 +158,14 @@ export default function QRPreview({ result }: { result: Result }) {
                 key={l.id}
                 title={l.hint}
                 onClick={() => setEcc(l.id)}
-                className={`cursor-pointer rounded-lg py-1.5 text-sm font-medium transition ${ecc === l.id ? "bg-white/15 text-white" : "text-slate-400 hover:text-white"}`}
+                disabled={!!design.logo}
+                className={`cursor-pointer rounded-lg py-1.5 text-sm font-medium transition disabled:cursor-not-allowed ${effectiveEcc === l.id ? "bg-white/15 text-white" : "text-slate-400 hover:text-white disabled:opacity-40"}`}
               >
                 {l.id}
               </button>
             ))}
           </div>
-        </div>
-
-        <div>
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">Colors</span>
-          <div className="flex flex-wrap items-center gap-2">
-            {PRESETS.map((p) => (
-              <button
-                key={p.fg + p.bg}
-                onClick={() => {
-                  setFg(p.fg);
-                  setBg(p.bg);
-                }}
-                className={`grid size-8 cursor-pointer place-items-center rounded-full border-2 transition ${fg === p.fg && bg === p.bg ? "border-violet-400" : "border-white/10"}`}
-                style={{ background: p.bg }}
-                aria-label="Color preset"
-              >
-                <span className="size-3.5 rounded-sm" style={{ background: p.fg }} />
-              </button>
-            ))}
-            <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-xs text-slate-400">
-              <input type="color" value={fg} onChange={(e) => setFg(e.target.value)} className="size-7 cursor-pointer rounded border-0 bg-transparent" />
-              Dots
-            </label>
-            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-400">
-              <input type="color" value={bg} onChange={(e) => setBg(e.target.value)} className="size-7 cursor-pointer rounded border-0 bg-transparent" />
-              Background
-            </label>
-          </div>
+          {design.logo && <p className="mt-1.5 text-xs text-slate-500">Locked to H while a logo is in the middle.</p>}
         </div>
 
         {payload && (
