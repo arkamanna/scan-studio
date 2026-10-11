@@ -1,15 +1,144 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, KeyRound, LoaderCircle, LogOut, RefreshCw, Trash2, X } from "lucide-react";
-import type { Endorsement } from "@/lib/endorsements";
+import { Check, ExternalLink, FileText, KeyRound, LoaderCircle, LogOut, RefreshCw, Trash2, X } from "lucide-react";
+import type { Endorsement, StoredFile } from "@/lib/endorsements";
 
 const KEY_STORAGE = "scan-studio:admin-key";
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|bmp|svg|heic|heif)$/i;
+
+const formatBytes = (n: number) =>
+  n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 ** 2).toFixed(2)} MB`;
+
+const displayName = (pathname: string) =>
+  (pathname.split("/").pop() ?? pathname).replace(/-[A-Za-z0-9]{20,}(?=\.[^.]+$|$)/, "");
+
+function FileBrowser({
+  files,
+  busy,
+  onDelete,
+}: {
+  files: StoredFile[];
+  busy: boolean;
+  onDelete: (pathnames: string[]) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setSelected((prev) => new Set([...prev].filter((p) => files.some((f) => f.pathname === p))));
+  }, [files]);
+
+  const toggle = (p: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(p)) next.delete(p);
+      else next.add(p);
+      return next;
+    });
+
+  const allSelected = files.length > 0 && selected.size === files.length;
+  const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+  const selectedSize = files.filter((f) => selected.has(f.pathname)).reduce((sum, f) => sum + f.size, 0);
+
+  const deleteSelected = async () => {
+    const list = [...selected];
+    if (!confirm(`Delete ${list.length} file${list.length === 1 ? "" : "s"}? Their QR codes will stop working. This cannot be undone.`)) return;
+    await onDelete(list);
+    setSelected(new Set());
+  };
+
+  return (
+    <section className="card space-y-4 p-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="font-semibold">
+          Stored files ({files.length}
+          {files.length > 0 && ` · ${formatBytes(totalSize)}`})
+        </h2>
+        {files.length > 0 && (
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                className="size-4 accent-violet-500"
+                checked={allSelected}
+                onChange={() => setSelected(allSelected ? new Set() : new Set(files.map((f) => f.pathname)))}
+              />
+              Select all
+            </label>
+            <button
+              className="btn-ghost border-red-500/40 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/10"
+              disabled={busy || selected.size === 0}
+              onClick={deleteSelected}
+            >
+              <Trash2 size={14} /> Delete selected{selected.size > 0 && ` (${selected.size} · ${formatBytes(selectedSize)})`}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {files.length ? (
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          {files.map((f) => {
+            const isSelected = selected.has(f.pathname);
+            const isImage = IMAGE_EXT.test(f.pathname) && f.previewUrl;
+            return (
+              <li
+                key={f.pathname}
+                className={`group relative overflow-hidden rounded-2xl border bg-black/20 transition ${
+                  isSelected ? "border-violet-400 ring-2 ring-violet-400/40" : "border-white/10"
+                }`}
+              >
+                <button type="button" className="block aspect-square w-full" onClick={() => toggle(f.pathname)} aria-pressed={isSelected}>
+                  {isImage ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={f.previewUrl!} alt={displayName(f.pathname)} loading="lazy" className="size-full object-cover" />
+                  ) : (
+                    <span className="grid size-full place-items-center text-slate-500">
+                      <FileText size={36} />
+                    </span>
+                  )}
+                </button>
+                <input
+                  type="checkbox"
+                  className="absolute left-2 top-2 size-5 cursor-pointer accent-violet-500"
+                  checked={isSelected}
+                  onChange={() => toggle(f.pathname)}
+                  aria-label={`Select ${displayName(f.pathname)}`}
+                />
+                {f.previewUrl && (
+                  <a
+                    href={f.previewUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="absolute right-2 top-2 rounded-lg bg-black/60 p-1.5 text-slate-200 opacity-0 transition hover:text-white group-hover:opacity-100"
+                    aria-label="Open file"
+                  >
+                    <ExternalLink size={14} />
+                  </a>
+                )}
+                <div className="space-y-0.5 border-t border-white/10 px-3 py-2">
+                  <p className="truncate text-xs font-medium text-slate-200" title={f.pathname}>
+                    {displayName(f.pathname)}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    {formatBytes(f.size)} · {new Date(f.uploadedAt).toLocaleDateString()}
+                  </p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="text-sm text-slate-500">No stored files.</p>
+      )}
+    </section>
+  );
+}
 
 export default function AdminPage() {
   const [key, setKey] = useState("");
   const [input, setInput] = useState("");
-  const [data, setData] = useState<{ pending: Endorsement[]; approved: Endorsement[] } | null>(null);
+  const [data, setData] = useState<{ pending: Endorsement[]; approved: Endorsement[]; files: StoredFile[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -51,12 +180,14 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const act = async (action: string, id?: string) => {
+  const act = async (action: string, id?: string, pathnames?: string[]) => {
     setBusy(`${action}:${id ?? ""}`);
     setMessage(null);
     try {
-      const res = await call("POST", { action, id });
-      if (action === "purge-uploads") setMessage(`Deleted ${res.deleted} uploaded file${res.deleted === 1 ? "" : "s"}.`);
+      const res = await call("POST", { action, id, pathnames });
+      if (action === "purge-uploads" || action === "delete-files") {
+        setMessage(`Deleted ${res.deleted} uploaded file${res.deleted === 1 ? "" : "s"}.`);
+      }
       await load();
     } catch (e) {
       setMessage((e as Error).message);
@@ -159,6 +290,8 @@ export default function AdminPage() {
           <p className="text-sm text-slate-500">No published endorsements yet.</p>
         )}
       </section>
+
+      <FileBrowser files={data.files} busy={!!busy} onDelete={(pathnames) => act("delete-files", undefined, pathnames)} />
 
       <section className="card space-y-3 border-red-500/30 p-5">
         <h2 className="font-semibold text-red-300">Danger zone</h2>

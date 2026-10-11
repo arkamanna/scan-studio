@@ -1,9 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
-const title = "Scan Studio — QR Code & Barcode Generator and Scanner";
+const title = "Scan Studio - QR Code & Barcode Generator and Scanner";
 const description =
-  "Create smart QR codes that open in WhatsApp, Maps, Mail, Wi‑Fi, Contacts and more, generate retail and shipping barcodes, and scan any QR code or barcode with your camera or an image.";
+  "Create smart QR codes that open in WhatsApp, Maps, Mail, Wi-Fi, Contacts and more, generate retail and shipping barcodes, and scan any QR code or barcode with your camera or an image.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://scan-studios.vercel.app"),

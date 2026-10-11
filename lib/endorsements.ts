@@ -1,4 +1,4 @@
-import { del, get, list, put } from "@vercel/blob";
+import { del, get, issueSignedToken, list, presignUrl, put } from "@vercel/blob";
 import { timingSafeEqual } from "node:crypto";
 
 export const UPLOADS_PREFIX = "uploads/";
@@ -34,7 +34,7 @@ export function validateEndorsement(input: EndorsementInput): { ok: true; value:
 }
 
 async function listAll(prefix: string) {
-  const blobs: { pathname: string; uploadedAt: Date }[] = [];
+  const blobs: { pathname: string; url: string; size: number; uploadedAt: Date }[] = [];
   let cursor: string | undefined;
   do {
     const page = await list({ prefix, cursor, limit: 1000 });
@@ -81,9 +81,47 @@ export async function removeEndorsement(id: string, status: "pending" | "approve
   await del(`${status === "pending" ? PENDING : APPROVED}${id}.json`);
 }
 
+const isEndorsementPath = (pathname: string) => pathname.startsWith("endorsements/");
+
+export type StoredFile = { pathname: string; size: number; uploadedAt: string; previewUrl: string | null };
+
+const PREVIEW_TTL_MS = 30 * 60 * 1000;
+
+async function previewUrl(blob: { pathname: string; url: string }) {
+  if (!new URL(blob.url).hostname.includes(".private.")) return blob.url;
+  try {
+    const validUntil = Date.now() + PREVIEW_TTL_MS;
+    const token = await issueSignedToken({ pathname: blob.pathname, operations: ["get"], validUntil });
+    const { presignedUrl } = await presignUrl(token, { operation: "get", pathname: blob.pathname, access: "private", validUntil });
+    return presignedUrl;
+  } catch {
+    return null;
+  }
+}
+
+/** Every shared photo/file (everything outside endorsements/), newest first, with short-lived preview links. */
+export async function listUploads(): Promise<StoredFile[]> {
+  const blobs = (await listAll("")).filter((b) => !isEndorsementPath(b.pathname));
+  blobs.sort((a, b) => +new Date(b.uploadedAt) - +new Date(a.uploadedAt));
+  return Promise.all(
+    blobs.map(async (b) => ({
+      pathname: b.pathname,
+      size: b.size,
+      uploadedAt: new Date(b.uploadedAt).toISOString(),
+      previewUrl: await previewUrl(b),
+    })),
+  );
+}
+
+export async function deleteUploads(pathnames: string[]) {
+  const targets = [...new Set(pathnames)].filter((p) => typeof p === "string" && p && !isEndorsementPath(p));
+  for (let i = 0; i < targets.length; i += 100) await del(targets.slice(i, i + 100));
+  return targets.length;
+}
+
 /** Deletes every shared photo/file, leaving endorsements untouched. */
 export async function purgeUploads() {
-  const blobs = (await listAll("")).filter((b) => !b.pathname.startsWith("endorsements/"));
+  const blobs = (await listAll("")).filter((b) => !isEndorsementPath(b.pathname));
   for (let i = 0; i < blobs.length; i += 100) await del(blobs.slice(i, i + 100).map((b) => b.pathname));
   return blobs.length;
 }

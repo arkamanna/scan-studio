@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
-import { approveEndorsement, isAdmin, listEndorsements, purgeUploads, removeEndorsement } from "@/lib/endorsements";
+import {
+  approveEndorsement,
+  deleteUploads,
+  isAdmin,
+  listEndorsements,
+  listUploads,
+  purgeUploads,
+  removeEndorsement,
+} from "@/lib/endorsements";
 
 export const dynamic = "force-dynamic";
 
@@ -8,13 +16,13 @@ const unauthorized = () =>
 
 export async function GET(request: Request) {
   if (!isAdmin(request)) return unauthorized();
-  const [pending, approved] = await Promise.all([listEndorsements("pending"), listEndorsements("approved")]);
-  return NextResponse.json({ pending, approved });
+  const [pending, approved, files] = await Promise.all([listEndorsements("pending"), listEndorsements("approved"), listUploads()]);
+  return NextResponse.json({ pending, approved, files });
 }
 
 export async function POST(request: Request) {
   if (!isAdmin(request)) return unauthorized();
-  const { action, id } = (await request.json().catch(() => ({}))) as { action?: string; id?: string };
+  const { action, id, pathnames } = (await request.json().catch(() => ({}))) as { action?: string; id?: string; pathnames?: string[] };
   try {
     switch (action) {
       case "approve":
@@ -26,6 +34,8 @@ export async function POST(request: Request) {
       case "unpublish":
         await removeEndorsement(id ?? "", "approved");
         return NextResponse.json({ ok: true });
+      case "delete-files":
+        return NextResponse.json({ ok: true, deleted: await deleteUploads(Array.isArray(pathnames) ? pathnames : []) });
       case "purge-uploads":
         return NextResponse.json({ ok: true, deleted: await purgeUploads() });
       default:
