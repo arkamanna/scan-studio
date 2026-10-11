@@ -2,20 +2,39 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  Bold,
   CalendarClock,
   CaseSensitive,
   ClipboardPaste,
   Copy,
   Eraser,
+  Italic,
   List,
   Maximize2,
   Minimize2,
   Redo2,
+  RemoveFormatting,
   Smile,
   Sparkles,
+  Strikethrough,
+  Subscript,
+  Superscript,
   Trash2,
+  Underline,
   Undo2,
 } from "lucide-react";
+import {
+  applyStyle,
+  clearFormatting,
+  detectStyle,
+  FAMILIES,
+  hasMark,
+  isScript,
+  setMark,
+  setScript,
+  type Family,
+  type Script,
+} from "@/lib/unicode-text";
 
 /** Byte capacity of the largest QR code at the lowest error-correction level. */
 const QR_MAX_BYTES = 2953;
@@ -23,6 +42,45 @@ const HISTORY_LIMIT = 100;
 const EMOJI = ["😀", "😂", "😍", "🥳", "👍", "🙏", "👏", "🔥", "✨", "🎉", "❤️", "💯", "✅", "⭐", "📍", "📞", "📧", "🔗", "🕒", "💡", "🎁", "🚀", "☕", "🌟"];
 
 type Transform = (s: string) => string;
+
+type Format = { family: Family; bold: boolean; italic: boolean; underline: boolean; strike: boolean; script: Script | null };
+const PLAIN: Format = { family: "default", bold: false, italic: false, underline: false, strike: false, script: null };
+const isPlain = (f: Format) => f.family === "default" && !f.bold && !f.italic && !f.underline && !f.strike && !f.script;
+
+/** Applies a full format to freshly typed text. */
+function formatText(text: string, f: Format) {
+  let out = text;
+  if (f.family !== "default" || f.bold || f.italic) out = applyStyle(out, f);
+  if (f.script) out = setScript(out, f.script, true);
+  if (f.underline) out = setMark(out, "underline", true);
+  if (f.strike) out = setMark(out, "strike", true);
+  return out;
+}
+
+const isHigh = (s: string, i: number) => {
+  const c = s.charCodeAt(i);
+  return c >= 0xd800 && c <= 0xdbff;
+};
+
+/** Finds the text inserted between `prev` and `next` (by common prefix/suffix), on whole code points. */
+function insertedRange(prev: string, next: string) {
+  let p = 0;
+  const max = Math.min(prev.length, next.length);
+  while (p < max && prev[p] === next[p]) p++;
+  if (p > 0 && isHigh(next, p - 1)) p--;
+  let sfx = 0;
+  while (sfx < max - p && prev[prev.length - 1 - sfx] === next[next.length - 1 - sfx]) sfx++;
+  let end = next.length - sfx;
+  if (end > p && end < next.length && isHigh(next, end - 1)) end++;
+  return { start: p, end };
+}
+
+const VIEW_SIZES = [
+  { id: "sm", label: "Small", cls: "text-[13px]" },
+  { id: "md", label: "Medium", cls: "text-[15px]" },
+  { id: "lg", label: "Large", cls: "text-lg" },
+  { id: "xl", label: "Extra large", cls: "text-2xl" },
+];
 
 const CASES: { id: string; label: string; fn: Transform }[] = [
   { id: "upper", label: "UPPERCASE", fn: (s) => s.toUpperCase() },
@@ -67,6 +125,10 @@ export default function TextEditor({ value, onChange, placeholder }: { value: st
   const [menu, setMenu] = useState<"case" | "emoji" | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [mode, setMode] = useState<Format>(PLAIN);
+  const [sel, setSel] = useState<[number, number]>([0, 0]);
+  const [viewSize, setViewSize] = useState("md");
+  const composing = useRef(false);
 
   const record = useCallback((next: string) => {
     const h = history.current;
@@ -159,6 +221,57 @@ export default function TextEditor({ value, onChange, placeholder }: { value: st
     }
   };
 
+  const syncSelection = () => {
+    const el = area.current;
+    if (el) setSel([el.selectionStart, el.selectionEnd]);
+  };
+
+  const hasSelection = sel[0] !== sel[1] && sel[1] <= value.length;
+  const selected = hasSelection ? value.slice(sel[0], sel[1]) : "";
+  const current: Format = hasSelection
+    ? {
+        ...detectStyle(selected),
+        underline: hasMark(selected, "underline"),
+        strike: hasMark(selected, "strike"),
+        script: isScript(selected, "super") ? "super" : isScript(selected, "sub") ? "sub" : null,
+      }
+    : mode;
+  const family = FAMILIES.find((f) => f.id === current.family) ?? FAMILIES[0];
+
+  /** With a selection: restyles it. Without: switches the style on/off for what is typed next. */
+  const format = (patch: Partial<Format>) => {
+    const next = { ...current, ...patch };
+    const fam = FAMILIES.find((f) => f.id === next.family)!;
+    if (!fam.bold) next.bold = false;
+    if (!fam.italic) next.italic = false;
+    if (!hasSelection) {
+      setMode(next);
+      area.current?.focus();
+      return;
+    }
+    let out = selected;
+    if ("family" in patch || "bold" in patch || "italic" in patch) out = applyStyle(out, next);
+    if ("script" in patch) out = setScript(out, patch.script ?? current.script ?? "super", patch.script != null);
+    if ("underline" in patch) out = setMark(out, "underline", next.underline);
+    if ("strike" in patch) out = setMark(out, "strike", next.strike);
+    const [a, b] = sel;
+    apply(value.slice(0, a) + out + value.slice(b), [a, a + out.length]);
+    setSel([a, a + out.length]);
+  };
+
+  const clearAll = () => {
+    if (hasSelection) {
+      const out = clearFormatting(selected);
+      apply(value.slice(0, sel[0]) + out + value.slice(sel[1]), [sel[0], sel[0] + out.length]);
+      setSel([sel[0], sel[0] + out.length]);
+    } else {
+      setMode(PLAIN);
+      if (value) apply(clearFormatting(value));
+    }
+  };
+
+  const styled = clearFormatting(value) !== value;
+
   const h = history.current;
   const canUndo = h.index > 0 || h.stack[h.index] !== value;
   const canRedo = h.index < h.stack.length - 1 && h.stack[h.index] === value;
@@ -214,6 +327,66 @@ export default function TextEditor({ value, onChange, placeholder }: { value: st
         </ToolButton>
       </div>
 
+      <div className="flex items-center gap-0.5 overflow-x-auto border-b border-white/10 bg-white/[0.02] px-1.5 py-1 [scrollbar-width:none]">
+        <label className="relative mr-1 flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-black/30 pl-2.5 pr-7 text-xs text-slate-200 hover:border-white/25">
+          <span className="text-sm leading-none">{family.sample}</span>
+          <span>{family.label}</span>
+          <svg viewBox="0 0 10 6" className="pointer-events-none absolute right-2.5 w-2.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+            <path d="M1 1l4 4 4-4" />
+          </svg>
+          <select
+            value={current.family}
+            onChange={(e) => format({ family: e.target.value as Family })}
+            className="absolute inset-0 cursor-pointer opacity-0"
+            aria-label="Font style"
+          >
+            {FAMILIES.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.sample}  {f.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <ToolButton label="Bold" onClick={() => format({ bold: !current.bold })} active={current.bold} disabled={!family.bold}>
+          <Bold size={16} />
+        </ToolButton>
+        <ToolButton label="Italic" onClick={() => format({ italic: !current.italic })} active={current.italic} disabled={!family.italic}>
+          <Italic size={16} />
+        </ToolButton>
+        <ToolButton label="Underline" onClick={() => format({ underline: !current.underline })} active={current.underline}>
+          <Underline size={16} />
+        </ToolButton>
+        <ToolButton label="Strikethrough" onClick={() => format({ strike: !current.strike })} active={current.strike}>
+          <Strikethrough size={16} />
+        </ToolButton>
+        <Divider />
+        <ToolButton label="Subscript" onClick={() => format({ script: current.script === "sub" ? null : "sub" })} active={current.script === "sub"}>
+          <Subscript size={16} />
+        </ToolButton>
+        <ToolButton label="Superscript" onClick={() => format({ script: current.script === "super" ? null : "super" })} active={current.script === "super"}>
+          <Superscript size={16} />
+        </ToolButton>
+        <ToolButton label="Clear formatting" onClick={clearAll} disabled={!styled && isPlain(mode)}>
+          <RemoveFormatting size={16} />
+        </ToolButton>
+        <Divider />
+        <label className="relative flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-white/10 bg-black/30 pl-2 pr-6 text-xs text-slate-300 hover:border-white/25" title="Editor text size (scanner apps use their own size)">
+          <span className="font-serif text-[13px] leading-none">A</span>
+          <span className="font-serif text-[10px] leading-none">A</span>
+          <span className="ml-1">{VIEW_SIZES.find((v) => v.id === viewSize)!.label}</span>
+          <svg viewBox="0 0 10 6" className="pointer-events-none absolute right-2 w-2.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+            <path d="M1 1l4 4 4-4" />
+          </svg>
+          <select value={viewSize} onChange={(e) => setViewSize(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Editor text size">
+            {VIEW_SIZES.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
       {menu === "case" && (
         <div className="flex flex-wrap gap-1.5 border-b border-white/10 bg-white/[0.02] p-2">
           {CASES.map((c) => (
@@ -256,8 +429,30 @@ export default function TextEditor({ value, onChange, placeholder }: { value: st
           placeholder={placeholder}
           spellCheck
           rows={expanded ? 16 : 7}
+          onSelect={syncSelection}
+          onKeyUp={syncSelection}
+          onMouseUp={syncSelection}
+          onTouchEnd={syncSelection}
+          onFocus={syncSelection}
+          onCompositionStart={() => (composing.current = true)}
+          onCompositionEnd={() => (composing.current = false)}
           onChange={(e) => {
-            const next = e.target.value;
+            let next = e.target.value;
+            if (!isPlain(mode) && !composing.current) {
+              const { start, end } = insertedRange(value, next);
+              const typed = next.slice(start, end);
+              if (typed) {
+                const out = formatText(typed, mode);
+                if (out !== typed) {
+                  next = next.slice(0, start) + out + next.slice(end);
+                  const caret = start + out.length;
+                  requestAnimationFrame(() => {
+                    area.current?.setSelectionRange(caret, caret);
+                    setSel([caret, caret]);
+                  });
+                }
+              }
+            }
             if (typingTimer.current === undefined) record(value);
             window.clearTimeout(typingTimer.current);
             typingTimer.current = window.setTimeout(() => {
@@ -271,11 +466,17 @@ export default function TextEditor({ value, onChange, placeholder }: { value: st
             e.preventDefault();
             step(e.shiftKey ? 1 : -1);
           }}
-          className="block w-full resize-y bg-transparent px-4 py-3 text-[15px] leading-relaxed text-slate-100 outline-none placeholder:text-slate-500"
+          className={`block w-full resize-y bg-transparent px-4 py-3 ${VIEW_SIZES.find((v) => v.id === viewSize)!.cls} leading-relaxed text-slate-100 outline-none placeholder:text-slate-500`}
         />
         {flash && <span className="absolute bottom-2 right-3 rounded-full bg-black/80 px-2.5 py-1 text-xs text-white">{flash}</span>}
       </div>
 
+      {styled && (
+        <p className="border-t border-white/10 bg-violet-500/[0.06] px-4 py-2 text-[11px] text-slate-400">
+          Styled text is made of special Unicode letters, so it stays styled when scanned. Each styled letter uses up to 4 bytes, and a few
+          older devices may show boxes instead.
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/10 bg-white/[0.02] px-4 py-2 text-[11px] tabular-nums text-slate-500">
         <span>{chars.toLocaleString()} characters</span>
         <span>{words.toLocaleString()} words</span>

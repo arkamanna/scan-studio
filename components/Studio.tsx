@@ -57,6 +57,8 @@ export default function Studio() {
             <ScanLine size={22} className="text-white" />
           </span>
           <span className="text-lg font-semibold tracking-tight">Scan Studio</span>
+        </div>
+        <div className="-mt-1 mb-5 empty:hidden">
           <InstallApp />
         </div>
         <h1 className="max-w-2xl text-3xl font-semibold tracking-tight sm:text-5xl">

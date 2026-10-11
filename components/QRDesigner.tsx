@@ -97,12 +97,13 @@ export default function QRDesigner({ design, onChange }: { design: QrDesign; onC
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {THEMES.map((t) => {
             const preview = { ...design, ...t.design } as QrDesign;
-            const active = isActiveTheme(design, t.design);
+            const active = design.theme === t.name;
+            const edited = active && !isActiveTheme(design, t.design);
             return (
               <button
                 key={t.name}
                 type="button"
-                onClick={() => set(t.design)}
+                onClick={() => set({ ...t.design, theme: t.name })}
                 aria-pressed={active}
                 className={`group relative flex cursor-pointer flex-col items-center gap-2 rounded-2xl border p-2.5 transition ${
                   active
@@ -120,6 +121,7 @@ export default function QRDesigner({ design, onChange }: { design: QrDesign; onC
                   dangerouslySetInnerHTML={{ __html: thumbnail(preview, `theme-${t.name}`) }}
                 />
                 <span className={`text-xs font-medium ${active ? "text-white" : "text-slate-400 group-hover:text-white"}`}>{t.name}</span>
+                {edited && <span className="-mt-1.5 text-[10px] font-medium uppercase tracking-wider text-violet-300">Edited</span>}
               </button>
             );
           })}

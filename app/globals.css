@@ -59,3 +59,13 @@ body {
     @apply border border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08];
   }
 }
+
+/* Tap/click focus shouldn't leave an outline; keyboard focus still gets one. */
+button:focus:not(:focus-visible) {
+  outline: none;
+}
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgb(167 139 250);
+  outline-offset: 2px;
+}

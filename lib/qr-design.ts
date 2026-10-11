@@ -8,6 +8,8 @@ export type FrameShape = "square" | "rounded" | "circle" | "leaf";
 export type BallShape = "square" | "rounded" | "circle" | "diamond" | "leaf";
 
 export type QrDesign = {
+  /** Quick theme the design started from (stays selected while it is customised). */
+  theme: string | null;
   dots: DotShape;
   frame: FrameShape;
   ball: BallShape;
@@ -27,6 +29,7 @@ export type QrDesign = {
 };
 
 export const DEFAULT_DESIGN: QrDesign = {
+  theme: "Classic",
   dots: "square",
   frame: "square",
   ball: "square",
