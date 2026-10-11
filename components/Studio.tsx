@@ -97,12 +97,6 @@ export default function Studio() {
           Everything is generated and scanned in your browser. Photos and documents are read on your device and are only uploaded if you choose “share as
           link”.
         </p>
-        <p>
-          Curated by{" "}
-          <a href="https://www.linkedin.com/in/arka-manna-39012920/" target="_blank" rel="noreferrer" className="font-medium text-slate-300 hover:text-white hover:underline">
-            Arka Manna
-          </a>
-        </p>
       </footer>
     </div>
   );

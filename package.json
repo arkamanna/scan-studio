@@ -9,6 +9,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.3.0",
     "@vercel/blob": "^2.8.1",
     "barcode-detector": "^3.2.2",
     "jsbarcode": "^3.12.3",
