@@ -177,6 +177,30 @@ export default function Curator() {
             <Award size={14} /> Endorsements
           </span>
           <h2 className="text-2xl font-semibold tracking-tight">{items.length ? "What people are saying" : "Like what you see?"}</h2>
+          <div className="mt-3 flex items-center gap-1 rounded-full border border-white/15 bg-white/[0.04] p-1 shadow-xl shadow-black/30 backdrop-blur-xl">
+            <a
+              href={LINKEDIN_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-2 rounded-full py-0.5 pl-0.5 pr-3 text-left transition hover:bg-white/[0.06]"
+              title="Arka Manna on LinkedIn"
+            >
+              <Avatar className="size-9" />
+              <span className="leading-tight">
+                <span className="block text-[10px] uppercase tracking-wider text-slate-400">Curated by</span>
+                <span className="flex items-center gap-1 text-sm font-semibold text-white">
+                  Arka Manna <LinkedInIcon size={12} />
+                </span>
+              </span>
+            </a>
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="flex cursor-pointer items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-500 to-cyan-500 px-3 py-2 text-xs font-semibold text-white hover:brightness-110"
+            >
+              <ThumbsUp size={14} /> Endorse
+            </button>
+          </div>
         </div>
 
         {items.length > 0 && (
@@ -187,42 +211,14 @@ export default function Curator() {
           </div>
         )}
 
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          {items.length > WALL_PREVIEW && (
+        {items.length > WALL_PREVIEW && (
+          <div className="flex justify-center">
             <button type="button" className="btn-ghost" onClick={() => setShowAll((s) => !s)}>
               {showAll ? "Show fewer" : `Show all ${items.length}`}
             </button>
-          )}
-          <button type="button" className="btn-primary" onClick={() => setOpen(true)}>
-            <ThumbsUp size={16} /> {items.length ? "Add your endorsement" : "Be the first to endorse Arka"}
-          </button>
-        </div>
+          </div>
+        )}
       </section>
-
-      <div className="fixed bottom-4 right-4 z-40 flex items-center gap-1 rounded-full border border-white/15 bg-[#0b0e1a]/85 p-1 pr-1 shadow-2xl shadow-black/50 backdrop-blur-xl">
-        <a
-          href={LINKEDIN_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-2 rounded-full py-0.5 pl-0.5 pr-3 transition hover:bg-white/[0.06]"
-          title="Arka Manna on LinkedIn"
-        >
-          <Avatar className="size-9" />
-          <span className="leading-tight">
-            <span className="hidden text-[10px] uppercase tracking-wider text-slate-400 sm:block">Curated by</span>
-            <span className="flex items-center gap-1 text-sm font-semibold text-white">
-              Arka Manna <LinkedInIcon size={12} />
-            </span>
-          </span>
-        </a>
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="flex cursor-pointer items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-500 to-cyan-500 px-3 py-2 text-xs font-semibold text-white hover:brightness-110"
-        >
-          <ThumbsUp size={14} /> <span className="hidden sm:inline">Endorse</span>
-        </button>
-      </div>
 
       {open && <EndorseDialog onClose={() => setOpen(false)} />}
     </>

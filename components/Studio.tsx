@@ -49,7 +49,7 @@ export default function Studio() {
   const hero = HERO[tab];
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pb-28 pt-8 sm:px-6 sm:pt-12">
+    <div className="mx-auto max-w-6xl px-4 pb-16 pt-8 sm:px-6 sm:pt-12">
       <header className="mb-8 flex flex-col items-center text-center sm:mb-10">
         <div className="mb-4 flex items-center gap-2.5">
           <span className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-cyan-500 shadow-lg shadow-violet-900/40">
