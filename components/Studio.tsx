@@ -5,6 +5,7 @@ import { Barcode, QrCode, ScanLine } from "lucide-react";
 import QRGenerator from "./QRGenerator";
 import BarcodeGenerator from "./BarcodeGenerator";
 import Scanner from "./scanner/Scanner";
+import Curator from "./Curator";
 
 type Tab = "qr" | "barcode" | "scan";
 
@@ -48,7 +49,7 @@ export default function Studio() {
   const hero = HERO[tab];
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pb-16 pt-8 sm:px-6 sm:pt-12">
+    <div className="mx-auto max-w-6xl px-4 pb-28 pt-8 sm:px-6 sm:pt-12">
       <header className="mb-8 flex flex-col items-center text-center sm:mb-10">
         <div className="mb-4 flex items-center gap-2.5">
           <span className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-cyan-500 shadow-lg shadow-violet-900/40">
@@ -89,8 +90,19 @@ export default function Studio() {
         {tab === "scan" && <Scanner />}
       </main>
 
-      <footer className="mt-12 text-center text-xs text-slate-500">
-        Everything is generated and scanned in your browser. Photos and documents are read on your device and are only uploaded if you choose “share as link”.
+      <Curator />
+
+      <footer className="mt-12 space-y-2 text-center text-xs text-slate-500">
+        <p>
+          Everything is generated and scanned in your browser. Photos and documents are read on your device and are only uploaded if you choose “share as
+          link”.
+        </p>
+        <p>
+          Curated by{" "}
+          <a href="https://www.linkedin.com/in/arka-manna-39012920/" target="_blank" rel="noreferrer" className="font-medium text-slate-300 hover:text-white hover:underline">
+            Arka Manna
+          </a>
+        </p>
       </footer>
     </div>
   );

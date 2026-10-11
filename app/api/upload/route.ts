@@ -2,6 +2,13 @@ import { issueSignedToken } from "@vercel/blob";
 import { handleUpload, handleUploadPresigned, type HandleUploadBody, type HandleUploadPresignedBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { uploadMode } from "@/lib/blob-config";
+import { UPLOADS_PREFIX } from "@/lib/endorsements";
+
+function assertUploadPath(pathname: string) {
+  if (!pathname.startsWith(UPLOADS_PREFIX) || pathname.slice(UPLOADS_PREFIX.length).includes("/")) {
+    throw new Error("Invalid upload path.");
+  }
+}
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const ALLOWED_TYPES = [
@@ -26,7 +33,10 @@ export async function POST(request: Request) {
       const json = await handleUpload({
         body,
         request,
-        onBeforeGenerateToken: async () => ({ allowedContentTypes: ALLOWED_TYPES, maximumSizeInBytes: MAX_BYTES, addRandomSuffix: true }),
+        onBeforeGenerateToken: async (pathname) => {
+          assertUploadPath(pathname);
+          return { allowedContentTypes: ALLOWED_TYPES, maximumSizeInBytes: MAX_BYTES, addRandomSuffix: true };
+        },
       });
       return NextResponse.json(json);
     }
@@ -35,16 +45,19 @@ export async function POST(request: Request) {
     const json = await handleUploadPresigned({
       body,
       request,
-      getSignedToken: async (pathname) => ({
-        token: await issueSignedToken({
-          pathname,
-          operations: ["put"],
-          allowedContentTypes: ALLOWED_TYPES,
-          maximumSizeInBytes: MAX_BYTES,
-          validUntil: Date.now() + 10 * 60 * 1000,
-        }),
-        urlOptions: { allowedContentTypes: ALLOWED_TYPES, maximumSizeInBytes: MAX_BYTES, addRandomSuffix: true },
-      }),
+      getSignedToken: async (pathname) => {
+        assertUploadPath(pathname);
+        return {
+          token: await issueSignedToken({
+            pathname,
+            operations: ["put"],
+            allowedContentTypes: ALLOWED_TYPES,
+            maximumSizeInBytes: MAX_BYTES,
+            validUntil: Date.now() + 10 * 60 * 1000,
+          }),
+          urlOptions: { allowedContentTypes: ALLOWED_TYPES, maximumSizeInBytes: MAX_BYTES, addRandomSuffix: true },
+        };
+      },
     });
     return NextResponse.json(json);
   } catch (error) {

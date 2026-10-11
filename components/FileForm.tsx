@@ -116,7 +116,8 @@ export default function FileForm({ kind, onResult }: { kind: Kind; onResult: OnR
     setError(null);
     try {
       const send = uploadMode === "presigned" ? uploadPresigned : upload;
-      const blob = await send(file.name, file, { access: "public", handleUploadUrl: "/api/upload" });
+      const safeName = file.name.replace(/[\/\\]/g, "_") || "file";
+      const blob = await send(`uploads/${safeName}`, file, { access: "public", handleUploadUrl: "/api/upload" });
       const isPrivate = new URL(blob.url).hostname.includes(".private.");
       const shareUrl = isPrivate ? `${window.location.origin}/f/${blob.pathname.split("/").map(encodeURIComponent).join("/")}` : blob.url;
       setUploadedUrl(shareUrl);

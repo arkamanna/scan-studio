@@ -1,5 +1,6 @@
 import { issueSignedToken, presignUrl } from "@vercel/blob";
 import { NextResponse } from "next/server";
+import { UPLOADS_PREFIX } from "@/lib/endorsements";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ const LINK_TTL_MS = 60 * 60 * 1000;
 export async function GET(_request: Request, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
   const pathname = path.map(decodeURIComponent).join("/");
-  if (!pathname || pathname.split("/").some((s) => s === ".." || s === ".")) {
+  if (!pathname.startsWith(UPLOADS_PREFIX) || pathname.split("/").some((s) => s === ".." || s === ".")) {
     return new NextResponse("Not found", { status: 404 });
   }
 
