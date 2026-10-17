@@ -105,8 +105,8 @@ export default function Scanner() {
   const active = scans.find((s) => s.id === activeId) ?? scans[0];
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
-      <section className="card space-y-5 p-5 sm:p-6">
+    <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_420px] [&>*]:min-w-0">
+      <section className="card space-y-5 p-4 sm:p-6">
         <div className="grid grid-cols-2 gap-1 rounded-2xl bg-black/30 p-1">
           {(
             [
@@ -169,7 +169,7 @@ export default function Scanner() {
           </div>
         )}
 
-        <div className="card p-5 sm:p-6">
+        <div className="card p-4 sm:p-6">
           {active ? (
             <ResultCard key={active.id} scan={active} />
           ) : (

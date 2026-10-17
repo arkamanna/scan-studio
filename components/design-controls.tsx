@@ -36,7 +36,7 @@ export function CollapsibleCard({
         </button>
         {open && action}
       </div>
-      {open && <div className="space-y-6 border-t border-white/10 p-5 sm:p-6">{children}</div>}
+      {open && <div className="space-y-6 border-t border-white/10 p-4 sm:p-6">{children}</div>}
     </section>
   );
 }

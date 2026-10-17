@@ -15,8 +15,24 @@ const sideOf = (label: string): Facing | null =>
 /** A code must leave the frame for this long before it counts as a new scan. */
 const REPEAT_WINDOW_MS = 1500;
 const SCAN_INTERVAL_MS = 40;
-/** Longest side of the frame handed to the wasm decoder; bigger frames are slower without reading better. */
+/** Longest side handed to the decoder for wide views; bigger frames are slower without reading better. */
 const DECODE_MAX_SIDE = 960;
+/** Tight centre crops keep full camera resolution (up to this size) so tiny codes still have enough pixels. */
+const TIGHT_MAX_SIDE = 1400;
+const ZOOM_STEPS = [1, 2, 3, 4];
+
+/**
+ * Decode passes, cycled frame by frame: [share of the view to crop, max side]. Tight crops dominate because
+ * small codes are the hard case; the wider passes catch codes held off-centre.
+ */
+const PASSES: [number, number][] = [
+  [0.45, TIGHT_MAX_SIDE],
+  [0.75, DECODE_MAX_SIDE],
+  [0.32, TIGHT_MAX_SIDE],
+  [1, DECODE_MAX_SIDE],
+];
+
+type Zoom = { hardware: boolean; min: number; max: number; value: number };
 
 function cameraError(e: unknown) {
   const name = (e as DOMException)?.name;
@@ -55,6 +71,10 @@ export default function CameraScanner({
   const [deviceId, setDeviceId] = useState<string>();
   const [facing, setFacing] = useState<Facing>("environment");
   const lastRequestRef = useRef<{ choices: CameraChoice[]; avoid?: string } | null>(null);
+  const [zoom, setZoom] = useState<Zoom>({ hardware: false, min: 1, max: 4, value: 1 });
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const triedMultiCamRef = useRef(false);
   const [torch, setTorch] = useState<{ supported: boolean; on: boolean }>({ supported: false, on: false });
 
   const stop = useCallback(() => {
@@ -197,10 +217,25 @@ export default function CameraScanner({
       const label = devices.find((d) => d.deviceId === settings.deviceId)?.label ?? track.label;
       setFacing(settings.facingMode === "user" || settings.facingMode === "environment" ? settings.facingMode : (sideOf(label) ?? "environment"));
       lastRequestRef.current = { choices: [{ deviceId: settings.deviceId }] };
-      const caps = (track.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { torch?: boolean; focusMode?: string[] };
+      const caps = (track.getCapabilities?.() ?? {}) as MediaTrackCapabilities & {
+        torch?: boolean;
+        focusMode?: string[];
+        zoom?: { min: number; max: number };
+      };
       setTorch({ supported: Boolean(caps.torch), on: false });
       if (caps.focusMode?.includes("continuous")) {
         track.applyConstraints({ advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet] }).catch(() => {});
+      }
+      const hwZoom = caps.zoom && caps.zoom.max > 1 ? caps.zoom : null;
+      setZoom(hwZoom ? { hardware: true, min: hwZoom.min, max: Math.min(hwZoom.max, 8), value: hwZoom.min } : { hardware: false, min: 1, max: 4, value: 1 });
+
+      // iPhone Pro models: the multi-lens "Triple/Dual Wide" back camera switches to macro for close-up codes.
+      const back = !list.some((c) => c.facing === "user" || c.deviceId);
+      const multi = devices.find((d) => /triple|dual wide/i.test(d.label));
+      if (back && multi && multi.deviceId !== settings.deviceId && !triedMultiCamRef.current) {
+        triedMultiCamRef.current = true;
+        start({ deviceId: multi.deviceId });
+        return;
       }
       seenRef.current.clear();
       setStatus("scanning");
@@ -238,6 +273,19 @@ export default function CameraScanner({
     }
   };
 
+  const applyZoom = async (value: number) => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (zoom.hardware && track) {
+      try {
+        await track.applyConstraints({ advanced: [{ zoom: value } as MediaTrackConstraintSet] });
+      } catch {
+        setZoom({ hardware: false, min: 1, max: 4, value });
+        return;
+      }
+    }
+    setZoom((z) => ({ ...z, value }));
+  };
+
   const resume = () => {
     // Codes still in front of the camera stay "seen", so they don't instantly re-trigger the last result.
     const now = Date.now();
@@ -254,16 +302,18 @@ export default function CameraScanner({
     let timer: number | undefined;
     let frame = 0;
 
-    /** Grabs the next region to decode: mostly the centre (where the guide box is), every third frame the whole view. */
+    /** Grabs the next centre region to decode (see PASSES); digital zoom narrows every crop further. */
     const grab = (video: HTMLVideoElement) => {
       const vw = video.videoWidth;
       const vh = video.videoHeight;
-      const whole = frame++ % 3 === 2;
-      const sw = whole ? vw : Math.round(vw * 0.7);
-      const sh = whole ? vh : Math.round(vh * 0.7);
+      const [share, maxSide] = PASSES[frame++ % PASSES.length];
+      const digital = zoomRef.current.hardware ? 1 : zoomRef.current.value;
+      const f = Math.min(1, share / digital);
+      const sw = Math.round(vw * f);
+      const sh = Math.round(vh * f);
       const sx = Math.round((vw - sw) / 2);
       const sy = Math.round((vh - sh) / 2);
-      const scale = Math.min(1, DECODE_MAX_SIDE / Math.max(sw, sh));
+      const scale = Math.min(1, maxSide / Math.max(sw, sh));
       const canvas = (frameRef.current ??= document.createElement("canvas"));
       canvas.width = Math.round(sw * scale);
       canvas.height = Math.round(sh * scale);
@@ -278,7 +328,8 @@ export default function CameraScanner({
         try {
           const { detector, native } = await getLiveDetector();
           let codes: Detected[];
-          if (native) {
+          if (native && frame % 2 === 1 && (zoomRef.current.hardware || zoomRef.current.value === 1)) {
+            frame++;
             codes = await detector.detect(video);
           } else {
             const { canvas, sx, sy, scale } = grab(video);
@@ -319,14 +370,22 @@ export default function CameraScanner({
 
   return (
     <div className="space-y-4">
-      <div ref={containerRef} className="relative aspect-[3/4] w-full scroll-mt-4 overflow-hidden rounded-3xl border border-white/10 bg-black sm:aspect-[4/3]">
-        <video ref={videoRef} playsInline muted autoPlay className={`absolute inset-0 size-full object-cover ${live ? "" : "invisible"}`} />
-        <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
+      <div
+        ref={containerRef}
+        className="relative aspect-square max-h-[56svh] w-full scroll-mt-4 overflow-hidden rounded-3xl border border-white/10 bg-black sm:aspect-[4/3] sm:max-h-[70vh]"
+      >
+        <div
+          className="absolute inset-0 origin-center transition-transform duration-200"
+          style={{ transform: !zoom.hardware && zoom.value > 1 ? `scale(${zoom.value})` : undefined }}
+        >
+          <video ref={videoRef} playsInline muted autoPlay className={`absolute inset-0 size-full object-cover ${live ? "" : "invisible"}`} />
+          <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
+        </div>
 
         {live && (
-          <div className="pointer-events-none absolute inset-[12%] sm:inset-x-[22%] sm:inset-y-[10%]">
+          <div className="pointer-events-none absolute inset-[16%] sm:inset-x-[24%] sm:inset-y-[12%]">
             {["left-0 top-0 border-l-4 border-t-4 rounded-tl-2xl", "right-0 top-0 border-r-4 border-t-4 rounded-tr-2xl", "left-0 bottom-0 border-l-4 border-b-4 rounded-bl-2xl", "right-0 bottom-0 border-r-4 border-b-4 rounded-br-2xl"].map((c) => (
-              <span key={c} className={`absolute size-10 border-white/90 ${c}`} />
+              <span key={c} className={`absolute size-8 border-white/90 sm:size-10 ${c}`} />
             ))}
             {status === "scanning" && <span className="scan-line absolute inset-x-2 h-0.5 rounded-full bg-gradient-to-r from-transparent via-cyan-300 to-transparent shadow-[0_0_12px_2px_rgba(34,211,238,0.6)]" />}
           </div>
@@ -364,6 +423,28 @@ export default function CameraScanner({
           </div>
         )}
 
+        {status === "scanning" && (
+          <div className="absolute inset-x-0 bottom-3 flex justify-center">
+            <div className="flex gap-1 rounded-full bg-black/55 p-1 backdrop-blur" role="group" aria-label="Zoom">
+              {ZOOM_STEPS.filter((z) => z * zoom.min <= zoom.max).map((z) => {
+                const value = z * zoom.min;
+                const active = Math.abs(zoom.value - value) < 0.05;
+                return (
+                  <button
+                    key={z}
+                    type="button"
+                    onClick={() => applyZoom(value)}
+                    aria-pressed={active}
+                    className={`grid size-9 place-items-center rounded-full text-xs font-semibold transition ${active ? "bg-white text-slate-900" : "text-white hover:bg-white/15"}`}
+                  >
+                    {z}×
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {status === "paused" && (
           <div className="absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-black/80 to-transparent p-5 pt-12">
             <button type="button" className="btn-primary" onClick={resume}>
@@ -372,6 +453,10 @@ export default function CameraScanner({
           </div>
         )}
       </div>
+
+      {status === "scanning" && (
+        <p className="text-center text-xs text-slate-500">Tiny code? Hold the phone about 15 cm away and tap 2× or 3× instead of moving closer.</p>
+      )}
 
       {live && (
         <div className="flex flex-wrap items-center gap-2">

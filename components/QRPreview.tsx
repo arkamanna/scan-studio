@@ -66,7 +66,7 @@ export default function QRPreview({ result, design }: { result: Result; design: 
   const fill = Math.min(100, (bytes / capacity) * 100);
 
   return (
-    <div className="card p-5 sm:p-6">
+    <div className="card p-4 sm:p-6">
       <div
         className={`relative mx-auto grid w-full max-w-[340px] place-items-center overflow-hidden rounded-3xl transition-colors ${ready ? "" : "aspect-square p-4"}`}
         style={{

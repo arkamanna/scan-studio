@@ -180,9 +180,9 @@ export default function BarcodeGenerator() {
   };
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
+    <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_400px] [&>*]:min-w-0">
       <div className="space-y-6">
-        <section className="card p-5 sm:p-6">
+        <section className="card p-4 sm:p-6">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Barcode type</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {FORMATS.map((f) => (
@@ -313,7 +313,7 @@ export default function BarcodeGenerator() {
       </div>
 
       <aside className="lg:sticky lg:top-6">
-        <div className="card p-5 sm:p-6">
+        <div className="card p-4 sm:p-6">
           <div
             className="relative grid min-h-[200px] w-full place-items-center overflow-hidden rounded-3xl p-4 transition-colors"
             style={{

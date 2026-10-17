@@ -116,7 +116,7 @@ function FieldRow({ field }: { field: Field }) {
   return (
     <div className="group flex items-start gap-3 px-3.5 py-2.5">
       <dt className="w-28 shrink-0 pt-0.5 text-xs font-medium text-slate-500">{field.label}</dt>
-      <dd className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm text-slate-100">
+      <dd className="min-w-0 flex-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm text-slate-100">
         {field.href && reveal ? (
           <a href={field.href} target={/^https?:/.test(field.href) ? "_blank" : undefined} rel="noreferrer" className="text-cyan-300 hover:underline">
             {shown}
@@ -234,8 +234,8 @@ export default function ResultCard({ scan }: { scan: Scan }) {
             <span className="text-violet-300">{parsed.label}</span>
             <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-slate-300">{formatName(scan.format)}</span>
           </div>
-          <h3 className="mt-0.5 break-words text-lg font-semibold leading-snug">{parsed.title}</h3>
-          {parsed.subtitle && <p className="break-words text-sm text-slate-400">{parsed.subtitle}</p>}
+          <h3 className="mt-0.5 break-words [overflow-wrap:anywhere] text-lg font-semibold leading-snug">{parsed.title}</h3>
+          {parsed.subtitle && <p className="break-words [overflow-wrap:anywhere] text-sm text-slate-400">{parsed.subtitle}</p>}
         </div>
       </div>
 
@@ -266,7 +266,7 @@ export default function ResultCard({ scan }: { scan: Scan }) {
       )}
 
       {parsed.actions.length > 0 && (
-        <div className="flex flex-wrap gap-2 [&>*]:flex-1 [&>*]:whitespace-nowrap">
+        <div className="flex flex-wrap gap-2 [&>*]:min-w-0 [&>*]:flex-1 [&>*]:whitespace-nowrap">
           {parsed.actions.map((a) => (
             <ActionButton key={a.label} action={a} />
           ))}

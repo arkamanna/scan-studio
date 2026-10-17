@@ -50,7 +50,7 @@ export default function Studio() {
   const hero = HERO[tab];
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pb-16 pt-8 sm:px-6 sm:pt-12">
+    <div className="mx-auto w-full max-w-6xl px-3 pb-16 pt-6 sm:px-6 sm:pt-12">
       <header className="mb-8 flex flex-col items-center text-center sm:mb-10">
         <div className="mb-4 flex items-center gap-2.5">
           <span className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-cyan-500 shadow-lg shadow-violet-900/40">
@@ -66,14 +66,14 @@ export default function Studio() {
         </h1>
         <p className="mt-4 max-w-xl text-sm text-slate-400 sm:text-base">{hero.blurb}</p>
 
-        <div role="tablist" className="mt-7 inline-flex rounded-2xl border border-white/10 bg-white/[0.04] p-1 backdrop-blur-xl">
+        <div role="tablist" className="mt-6 inline-flex max-w-full rounded-2xl border border-white/10 bg-white/[0.04] p-1 backdrop-blur-xl">
           {TABS.map((t) => (
             <button
               key={t.id}
               role="tab"
               aria-selected={tab === t.id}
               onClick={() => select(t.id)}
-              className={`inline-flex cursor-pointer items-center gap-2 rounded-xl px-5 py-2 text-sm font-medium transition ${
+              className={`inline-flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition sm:px-5 ${
                 tab === t.id ? "bg-gradient-to-r from-violet-500 to-cyan-500 text-white shadow-lg shadow-violet-900/30" : "text-slate-400 hover:text-white"
               }`}
             >
