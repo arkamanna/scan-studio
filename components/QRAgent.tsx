@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Bot, ImagePlus, LoaderCircle, Mic, MicOff, RotateCcw, Sparkles, Wand2, X } from "lucide-react";
+import { ArrowUp, Bot, ImagePlus, Info, LoaderCircle, Mic, MicOff, RotateCcw, Sparkles, Wand2, X } from "lucide-react";
 import { CollapsibleCard } from "./design-controls";
 import type { AgentReply } from "@/lib/qr-agent-schema";
 import { applyAgentDesign, contentToResult, describeState, type AgentMessage } from "@/lib/qr-agent";
@@ -26,7 +26,8 @@ const TAB_NAMES: Record<string, string> = {
 
 type Turn =
   | { role: "user"; content: string }
-  | { role: "assistant"; content: string; questions?: AgentReply["questions"]; status: AgentReply["status"]; applied?: string };
+  | { role: "assistant"; content: string; questions?: AgentReply["questions"]; status: AgentReply["status"]; applied?: string }
+  | { role: "notice"; content: string };
 
 const SUGGESTIONS = [
   "Wi‑Fi QR for my café with warm brown colours",
@@ -61,6 +62,8 @@ export default function QRAgent({
   onApply: (r: { result?: Result; label?: string; design: QrDesign }) => void;
 }) {
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [basic, setBasic] = useState(false);
+  const modeRef = useRef<"ai" | "basic">("ai");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [askFirst, setAskFirst] = useState(true);
@@ -105,18 +108,25 @@ export default function QRAgent({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: history.map<AgentMessage>((t) => ({
+          messages: history.flatMap<AgentMessage>((t) => (t.role === "notice" ? [] : [{
             role: t.role,
             content: t.role === "assistant" && t.questions?.length ? `${t.content}\n${t.questions.map((q) => `- ${q.question} (${q.options.join(" / ")})`).join("\n")}` : t.content,
-          })),
+          }])),
           askFirst,
           state: describeState(design, contentLabel),
           today: new Date().toString().slice(0, 21),
         }),
       });
-      const data = (await res.json().catch(() => ({}))) as { reply?: AgentReply; error?: string };
+      const data = (await res.json().catch(() => ({}))) as { reply?: AgentReply; mode?: "ai" | "basic"; notice?: string; error?: string };
       if (!res.ok || !data.reply) throw new Error(data.error || "The agent couldn’t answer just now.");
       const reply = data.reply;
+      const mode = data.mode ?? "ai";
+      if (mode !== modeRef.current) {
+        const notice = mode === "basic" ? data.notice || "The AI services are unavailable, so the basic agent is answering." : "The Groq and Google AI services are back, so the full AI agent is answering again.";
+        setTurns((t) => [...t, { role: "notice", content: notice }]);
+        modeRef.current = mode;
+        setBasic(mode === "basic");
+      }
 
       const applied: string[] = [];
       if (reply.status === "create") {
@@ -256,6 +266,8 @@ export default function QRAgent({
   const reset = () => {
     stopVoice();
     setTurns([]);
+    modeRef.current = "ai";
+    setBasic(false);
     setInput("");
     setAnswers({});
   };
@@ -303,7 +315,12 @@ export default function QRAgent({
           )}
 
           {turns.map((t, i) =>
-            t.role === "user" ? (
+            t.role === "notice" ? (
+              <p key={i} className="mx-auto flex max-w-[95%] items-start gap-2 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
+                <Info size={14} className="mt-0.5 shrink-0" />
+                {t.content}
+              </p>
+            ) : t.role === "user" ? (
               <div key={i} className="flex justify-end">
                 <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-gradient-to-r from-violet-500 to-cyan-500 px-3.5 py-2 text-sm text-white [overflow-wrap:anywhere]">
                   {t.content}
@@ -441,8 +458,11 @@ export default function QRAgent({
             <input type="checkbox" className="size-4 accent-violet-500" checked={askFirst} onChange={(e) => setAskFirst(e.target.checked)} />
             Ask me about the design first
           </label>
-          {voiceError && <span className="text-amber-300">{voiceError}</span>}
+          {voiceError ? <span className="text-amber-300">{voiceError}</span> : basic ? <span className="text-amber-300">Basic agent answering: full AI is unavailable</span> : null}
         </div>
+        <p className="text-[11px] leading-relaxed text-slate-500">
+          Messages are answered by Groq or Google AI. Wi‑Fi passwords are hidden from them, but Google’s free tier may use other chat text to improve its models, so avoid sharing private details.
+        </p>
       </div>
     </CollapsibleCard>
   );

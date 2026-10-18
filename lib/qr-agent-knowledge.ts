@@ -8,12 +8,12 @@ const themeLine = THEMES.map((t) => {
   return `${t.name} (${d.dots} dots, ${d.frame} frames, ${fill} on ${d.background})`;
 }).join("; ");
 
-const barcodeLines = BARCODE_FORMATS.map((f) => `  - ${f.id}: ${f.label}, ${f.use}. Rule: ${f.rule}`).join("\n");
+const barcodeLines = BARCODE_FORMATS.map((f) => `  - ${f.id}: ${f.label}, ${f.use}`).join("\n");
 
 const groupLines = CODE_GROUPS.map(
   (g) =>
     `- Tab "${g.id}" (${g.label}):\n` +
-    g.types.map((t) => `  - ${t.bcid}: ${t.label}, ${t.use}. Rule: ${t.rule}${t.scannable ? "" : " (phones can't scan it; needs a dedicated scanner)"}`).join("\n"),
+    g.types.map((t) => `  - ${t.bcid}: ${t.label}, ${t.use}${t.scannable ? "" : " (needs a dedicated scanner)"}`).join("\n"),
 ).join("\n");
 
 export const OFF_TOPIC_MESSAGE =
