@@ -10,6 +10,8 @@ import {
   vcardPayload,
   whatsappPayload,
   wifiPayload,
+  LINK_TARGETS,
+  TEXT_TARGETS,
   type Result,
 } from "./payloads";
 
@@ -28,10 +30,14 @@ export function contentToResult(c: AgentContent): { result: Result; label: strin
   switch (c.kind) {
     case "link": {
       const url = normalizeUrl(s(c.url));
-      return url ? { result: { payload: url, opensIn: detectApp(url) }, label: `Link · ${url}` } : null;
+      if (!url) return null;
+      const t = LINK_TARGETS.find((x) => x.id === c.target && x.id !== "direct");
+      return t ? { result: { payload: t.build(url), opensIn: t.app }, label: `Link via ${t.label} · ${url}` } : { result: { payload: url, opensIn: detectApp(url) }, label: `Link · ${url}` };
     }
     case "text":
-      return s(c.text) ? { result: { payload: s(c.text), opensIn: "Camera text preview" }, label: "Text" } : null;
+      if (!s(c.text)) return null;
+      const t = TEXT_TARGETS.find((x) => x.id === (c.target ?? "plain")) ?? TEXT_TARGETS[0];
+      return { result: { payload: t.build(s(c.text)), opensIn: t.app }, label: t.id === "plain" ? "Text" : `Text · ${t.label}` };
     case "wifi": {
       if (!s(c.ssid)) return null;
       const security = c.security ?? (s(c.password) ? "WPA" : "nopass");
@@ -84,6 +90,10 @@ export function applyAgentDesign(current: QrDesign, d: AgentDesign | null): QrDe
   if (typeof d.transparent === "boolean") next.transparent = d.transparent;
   if (d.caption !== null && d.caption !== undefined) next.caption = d.caption.slice(0, 60);
   if (color(d.captionColor)) next.captionColor = color(d.captionColor)!;
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(v)));
+  if (typeof d.captionSize === "number") next.captionSize = clamp(d.captionSize, 4, 12);
+  if (typeof d.logoSize === "number") next.logoSize = clamp(d.logoSize, 10, 30);
+  if (typeof d.logoClear === "boolean") next.logoClear = d.logoClear;
   return next;
 }
 

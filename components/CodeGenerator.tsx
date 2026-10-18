@@ -8,6 +8,7 @@ import { copyPng, printSvg, saveBlob, sharePng } from "@/lib/share";
 import { captionText, gradientDef, paint, type Fill } from "@/lib/qr-design";
 import { svgToPng } from "@/lib/raster";
 import { getDetector } from "@/lib/detector";
+import { on, takeFill, type CodeFill } from "@/lib/app-events";
 import { RMQR_VERSIONS, type CodeGroup, type CodeType } from "@/lib/code-types";
 
 type Bwip = typeof import("bwip-js/browser");
@@ -85,6 +86,17 @@ export default function CodeGenerator({ group }: { group: CodeGroup }) {
   useEffect(() => {
     import("bwip-js/browser").then(setBwip);
   }, []);
+
+  useEffect(() => {
+    const apply = (fill?: CodeFill) => {
+      if (fill?.tab !== group.id) return;
+      const t = group.types.find((x) => x.bcid.toLowerCase() === fill.type.toLowerCase() || x.label.toLowerCase() === fill.type.toLowerCase()) ?? group.types[0];
+      setTypeId(t.bcid);
+      setValue(t.numeric ? fill.value.replace(/\D/g, "") : t.upper ? fill.value.toUpperCase() : fill.value);
+    };
+    apply(takeFill(group.id));
+    return on("ss:fill", apply);
+  }, [group]);
 
   useEffect(() => {
     if (!bwip || !data) return;

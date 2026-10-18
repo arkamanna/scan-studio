@@ -7,6 +7,16 @@ import type { AgentReply } from "@/lib/qr-agent-schema";
 import { applyAgentDesign, contentToResult, describeState, type AgentMessage } from "@/lib/qr-agent";
 import type { Result } from "@/lib/payloads";
 import type { QrDesign } from "@/lib/qr-design";
+import { emit } from "@/lib/app-events";
+
+/** Stop listening after this much silence (or when the user taps the mic again). */
+const SILENCE_MS = 2500;
+/** Give up if nothing at all is heard for this long. */
+const NO_SPEECH_MS = 8000;
+
+const TAB_NAMES: Record<string, string> = {
+  qr: "QR Code", barcode: "Barcode", datamatrix: "Data Matrix", aztec: "Aztec", pdf417: "PDF417", gs1: "GS1", postal: "Postal", more: "More", scan: "Scan",
+};
 
 type Turn =
   | { role: "user"; content: string }
@@ -14,9 +24,9 @@ type Turn =
 
 const SUGGESTIONS = [
   "Wi‑Fi QR for my café network BeanHouse, password latte2026, warm brown colours",
-  "Link to arkamanna.com with a purple gradient and rounded dots",
-  "WhatsApp chat with +91 98765 43210 saying “Hi, I saw your poster”",
-  "Contact card for Arka Manna, arka@example.com, caption “Scan to save”",
+  "Link to arkamanna.com with a purple gradient and rounded dots, then download it",
+  "EAN-13 barcode for 590123412345",
+  "Which code should I use for a boarding pass?",
 ];
 
 /* Minimal Web Speech API typing (not in TypeScript's DOM lib yet). */
@@ -57,6 +67,9 @@ export default function QRAgent({
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const recRef = useRef<Recognition | null>(null);
   const baseRef = useRef("");
+  const wantRef = useRef(false);
+  const silenceRef = useRef<number | undefined>(undefined);
+  const heardRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setVoiceOk(Boolean(speechCtor())), []);
@@ -65,12 +78,18 @@ export default function QRAgent({
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
   }, [turns, busy]);
 
-  useEffect(() => () => recRef.current?.stop(), []);
+  const stopVoice = () => {
+    wantRef.current = false;
+    window.clearTimeout(silenceRef.current);
+    recRef.current?.stop();
+  };
+
+  useEffect(() => stopVoice, []);
 
   const send = async (text: string) => {
     const message = text.trim();
     if (!message || busy) return;
-    recRef.current?.stop();
+    stopVoice();
     const history: Turn[] = [...turns, { role: "user", content: message }];
     setTurns(history);
     setInput("");
@@ -95,16 +114,28 @@ export default function QRAgent({
       setBasic(data.mode === "basic");
       const reply = data.reply;
 
-      let applied: string | undefined;
+      const applied: string[] = [];
       if (reply.status === "create") {
         const built = reply.content ? contentToResult(reply.content) : null;
-        const nextDesign = applyAgentDesign(design, reply.design);
         if (built || reply.design) {
-          onApply({ result: built?.result, label: built?.label, design: nextDesign });
-          applied = built ? built.label : "Design updated";
+          onApply({ result: built?.result, label: built?.label, design: applyAgentDesign(design, reply.design) });
+          applied.push(built ? built.label : "Design updated");
+        }
+        if (reply.ecc || reply.actions?.length) {
+          emit("ss:qr", { ecc: reply.ecc ?? undefined, actions: reply.actions ?? undefined });
+          if (reply.ecc) applied.push(`Error correction ${reply.ecc}`);
+          reply.actions?.forEach((a) => applied.push(a.replace("_", " ").replace("download png", "Downloaded PNG").replace("download svg", "Downloaded SVG")));
+        }
+        if (reply.code) {
+          emit("ss:fill", reply.code);
+          applied.push(`${TAB_NAMES[reply.code.tab]} tab · ${reply.code.value}`);
         }
       }
-      setTurns((t) => [...t, { role: "assistant", content: reply.message, questions: reply.status === "ask" ? reply.questions : null, status: reply.status, applied }]);
+      if (reply.navigate && !reply.code) {
+        emit("ss:tab", { tab: reply.navigate });
+        applied.push(`Opened ${TAB_NAMES[reply.navigate]}`);
+      }
+      setTurns((t) => [...t, { role: "assistant", content: reply.message, questions: reply.status === "ask" ? reply.questions : null, status: reply.status, applied: applied.join(" · ") || undefined }]);
     } catch (e) {
       setTurns((t) => [...t, { role: "assistant", content: (e as Error).message || "Something went wrong. Please try again.", status: "reply" }]);
     } finally {
@@ -112,38 +143,76 @@ export default function QRAgent({
     }
   };
 
+  /**
+   * Browsers end recognition after a short pause, so keep restarting it until the user has been quiet for
+   * SILENCE_MS (or taps the mic). Each session's text is appended to what was already heard.
+   */
   const toggleVoice = () => {
     if (listening) {
-      recRef.current?.stop();
+      stopVoice();
       return;
     }
     const Ctor = speechCtor();
     if (!Ctor) return;
-    const rec = new Ctor();
-    rec.lang = navigator.language || "en-US";
-    rec.interimResults = true;
-    rec.continuous = false;
-    baseRef.current = input ? `${input.trim()} ` : "";
-    rec.onresult = (e) => {
-      let finalText = "";
-      let interim = "";
-      for (let i = 0; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) finalText += r[0].transcript;
-        else interim += r[0].transcript;
-      }
-      setInput(baseRef.current + finalText + interim);
+    wantRef.current = true;
+    heardRef.current = false;
+    let text = input ? `${input.trim()} ` : "";
+
+    const armSilence = (ms: number) => {
+      window.clearTimeout(silenceRef.current);
+      silenceRef.current = window.setTimeout(stopVoice, ms);
     };
-    rec.onerror = (e) => setVoiceError(e.error === "not-allowed" ? "Microphone permission was blocked." : "Couldn’t hear that, please try again.");
-    rec.onend = () => setListening(false);
-    recRef.current = rec;
+
+    const session = () => {
+      const rec = new Ctor();
+      rec.lang = navigator.language || "en-US";
+      rec.interimResults = true;
+      rec.continuous = true;
+      baseRef.current = text;
+      rec.onresult = (e) => {
+        let finalText = "";
+        let interim = "";
+        for (let i = 0; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (r.isFinal) finalText += r[0].transcript;
+          else interim += r[0].transcript;
+        }
+        text = baseRef.current + finalText;
+        setInput(text + interim);
+        heardRef.current = true;
+        armSilence(SILENCE_MS);
+      };
+      rec.onerror = (e) => {
+        if (e.error === "no-speech" || e.error === "aborted") return;
+        wantRef.current = false;
+        setVoiceError(e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone permission was blocked." : "Couldn’t hear that, please try again.");
+      };
+      rec.onend = () => {
+        if (wantRef.current) {
+          if (text && !text.endsWith(" ")) text += " ";
+          try {
+            session();
+            return;
+          } catch {
+            /* fall through and stop */
+          }
+        }
+        window.clearTimeout(silenceRef.current);
+        setListening(false);
+        setInput((v) => v.trim());
+      };
+      recRef.current = rec;
+      rec.start();
+    };
+
     setVoiceError(null);
     setListening(true);
-    rec.start();
+    armSilence(NO_SPEECH_MS);
+    session();
   };
 
   const reset = () => {
-    recRef.current?.stop();
+    stopVoice();
     setTurns([]);
     setInput("");
     setAnswers({});
@@ -160,7 +229,7 @@ export default function QRAgent({
   return (
     <CollapsibleCard
       title="QR Agent"
-      subtitle="Describe the QR code you want by typing or speaking. The agent asks about the design, then builds it."
+      subtitle="Describe what you need by typing or speaking. It designs QR codes, fills in any other code type and answers questions about the app."
       icon={<Sparkles size={18} />}
       action={
         turns.length > 0 && (
@@ -282,7 +351,7 @@ export default function QRAgent({
                 send(input);
               }
             }}
-            placeholder={listening ? "Listening…" : "e.g. A QR for my Instagram @arka with a pink gradient and hearts"}
+            placeholder={listening ? "Listening… pause for a moment when you’re done" : "e.g. A QR for my Instagram @arka with a pink gradient and hearts"}
             className="input min-h-[52px] flex-1 resize-none text-sm leading-relaxed"
           />
           {voiceOk && (

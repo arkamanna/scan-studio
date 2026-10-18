@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ClipboardCopy, Copy, Download, ExternalLink, Printer, QrCode, Share2, Smartphone } from "lucide-react";
 import type { Result } from "@/lib/payloads";
 import { copyPng, printSvg, saveBlob, sharePng } from "@/lib/share";
 import { renderQr, type Ecc, type QrDesign } from "@/lib/qr-design";
 import { svgToPng } from "@/lib/raster";
+import { on, type QrAction } from "@/lib/app-events";
 
 // Maximum bytes per QR code (version 40, byte mode) at each error-correction level.
 const CAPACITY: Record<Ecc, number> = { L: 2953, M: 2331, Q: 1663, H: 1273 };
@@ -63,6 +64,31 @@ export default function QRPreview({ result, design }: { result: Result; design: 
   };
 
   const ready = Boolean(svg);
+
+  // Actions requested by the QR agent run against the latest render.
+  const actionsRef = useRef<Record<QrAction, () => unknown>>(null!);
+  actionsRef.current = {
+    download_png: () => download("png"),
+    download_svg: () => download("svg"),
+    print: () => printSvg(svg!, "QR code"),
+    copy_image: copyImage,
+    share,
+  };
+  const readyRef = useRef(ready);
+  readyRef.current = ready;
+  useEffect(
+    () =>
+      on("ss:qr", ({ ecc: level, actions }) => {
+        if (level) setEcc(level);
+        if (!actions?.length) return;
+        // Let the agent's content and design render first.
+        window.setTimeout(() => {
+          if (!readyRef.current) return;
+          actions.forEach((a) => actionsRef.current[a]?.());
+        }, 500);
+      }),
+    [],
+  );
   const fill = Math.min(100, (bytes / capacity) * 100);
 
   return (

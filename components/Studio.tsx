@@ -6,6 +6,7 @@ import QRGenerator from "./QRGenerator";
 import BarcodeGenerator from "./BarcodeGenerator";
 import CodeGenerator from "./CodeGenerator";
 import { CODE_GROUPS } from "@/lib/code-types";
+import { on } from "@/lib/app-events";
 import Scanner from "./scanner/Scanner";
 import InstallApp from "./InstallApp";
 import Curator from "./Curator";
@@ -92,6 +93,20 @@ export default function Studio() {
     setVisited((v) => (v.has(t) ? v : new Set(v).add(t)));
     history.replaceState(null, "", t === "qr" ? window.location.pathname : `#${t}`);
   };
+
+  useEffect(() => {
+    const go = (t: Tab) => {
+      select(t);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    const offTab = on("ss:tab", ({ tab }) => go(tab));
+    const offFill = on("ss:fill", ({ tab }) => go(tab));
+    return () => {
+      offTab();
+      offFill();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const hero = HERO[tab];
 

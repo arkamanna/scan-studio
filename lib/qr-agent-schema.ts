@@ -5,8 +5,16 @@ const n = <T extends z.ZodType>(t: T) => t.nullable();
 export const THEME_NAMES = ["Classic", "Night", "Aurora", "Sunset", "Forest", "Love"] as const;
 export const CONTENT_KINDS = ["link", "text", "wifi", "contact", "email", "phone", "sms", "whatsapp", "location", "event"] as const;
 
+export const LINK_TARGET_IDS = ["direct", "whatsapp", "sms", "email", "telegram"] as const;
+export const TEXT_TARGET_IDS = ["plain", "whatsapp", "sms", "email", "telegram", "search", "translate", "maps"] as const;
+export const TAB_IDS = ["qr", "barcode", "datamatrix", "aztec", "pdf417", "gs1", "postal", "more", "scan"] as const;
+export const QR_ACTIONS = ["download_png", "download_svg", "print", "copy_image", "share"] as const;
+
 export const agentContentSchema = z.object({
   kind: z.enum(CONTENT_KINDS),
+  target: n(z.enum([...new Set([...LINK_TARGET_IDS, ...TEXT_TARGET_IDS])] as [string, ...string[]])).describe(
+    "link: direct (open the link, default) or share it via whatsapp/sms/email/telegram. text: plain (show text, default), whatsapp/sms/email/telegram (share), search (Google), translate (Google Translate), maps (search Maps)",
+  ),
   url: n(z.string()).describe("link: the URL"),
   text: n(z.string()).describe("text: the plain text to encode"),
   ssid: n(z.string()).describe("wifi: network name"),
@@ -49,6 +57,9 @@ export const agentDesignSchema = z.object({
   transparent: n(z.boolean()),
   caption: n(z.string()).describe("short text shown under the code"),
   captionColor: n(hex),
+  captionSize: n(z.number()).describe("caption size, 4-12 (% of image width), default 7"),
+  logoSize: n(z.number()).describe("logo width, 10-30 (% of code width); only matters when a logo is uploaded"),
+  logoClear: n(z.boolean()).describe("clear the dots behind the logo"),
 });
 
 export const agentReplySchema = z.object({
@@ -66,6 +77,16 @@ export const agentReplySchema = z.object({
   ),
   content: n(agentContentSchema),
   design: n(agentDesignSchema),
+  ecc: n(z.enum(["L", "M", "Q", "H"])).describe("QR error correction level, only when asked"),
+  actions: n(z.array(z.enum(QR_ACTIONS))).describe("run after creating/updating the QR, only when the user asks (e.g. 'and download it')"),
+  code: n(
+    z.object({
+      tab: z.enum(["barcode", "datamatrix", "aztec", "pdf417", "gs1", "postal", "more"]),
+      type: z.string().describe("type id from the catalogue, e.g. EAN13 or datamatrix"),
+      value: z.string(),
+    }),
+  ).describe("a non-QR code: opens its tab with the type and value filled in"),
+  navigate: n(z.enum(TAB_IDS)).describe("open a tab without filling anything (e.g. 'open the scanner')"),
 });
 
 export type AgentContent = z.infer<typeof agentContentSchema>;
