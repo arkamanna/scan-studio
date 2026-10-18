@@ -1,5 +1,5 @@
 /* Scan Studio service worker: makes the app installable and lets it open offline. */
-const CACHE = "scan-studio-v1";
+const CACHE = "scan-studio-v2";
 const SHELL = ["/", "/icons/icon-192.png", "/icons/icon-512.png", "/arka.jpg"];
 
 self.addEventListener("install", (event) => {

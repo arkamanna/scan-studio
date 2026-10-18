@@ -114,9 +114,8 @@ export default function Studio() {
     <div className="mx-auto w-full max-w-6xl px-3 pb-16 pt-6 sm:px-6 sm:pt-12">
       <header className="mb-8 flex flex-col items-center text-center sm:mb-10">
         <div className="mb-4 flex items-center gap-2.5">
-          <span className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-cyan-500 shadow-lg shadow-violet-900/40">
-            <ScanLine size={22} className="text-white" />
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/icon-192.png" alt="" width={40} height={40} className="size-10 drop-shadow-[0_8px_14px_rgba(76,29,149,0.45)]" />
           <span className="text-lg font-semibold tracking-tight">Scan Studio</span>
         </div>
         <div className="-mt-1 mb-5 empty:hidden">
