@@ -25,7 +25,9 @@ export async function imageFileToDataUrl(file: File, maxSide = 512): Promise<str
     const img = await loadImage(url);
     const w = img.naturalWidth || maxSide;
     const h = img.naturalHeight || maxSide;
-    const scale = Math.min(1, maxSide / Math.max(w, h));
+    // Vector logos are often tiny (e.g. 24px) at their intrinsic size, so scale them up; never upscale bitmaps.
+    const isSvg = file.type === "image/svg+xml" || /\.svg$/i.test(file.name);
+    const scale = isSvg ? maxSide / Math.max(w, h) : Math.min(1, maxSide / Math.max(w, h));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(w * scale));
     canvas.height = Math.max(1, Math.round(h * scale));

@@ -1,13 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Bot, LoaderCircle, Mic, MicOff, RotateCcw, Sparkles, Wand2 } from "lucide-react";
+import { ArrowUp, Bot, ImagePlus, LoaderCircle, Mic, MicOff, RotateCcw, Sparkles, Wand2, X } from "lucide-react";
 import { CollapsibleCard } from "./design-controls";
 import type { AgentReply } from "@/lib/qr-agent-schema";
 import { applyAgentDesign, contentToResult, describeState, type AgentMessage } from "@/lib/qr-agent";
 import type { Result } from "@/lib/payloads";
 import type { QrDesign } from "@/lib/qr-design";
 import { emit } from "@/lib/app-events";
+import { imageFileToDataUrl } from "@/lib/raster";
+
+/** Logo uploads: common logo formats only. */
+const LOGO_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", svg: "image/svg+xml" };
+const LOGO_ACCEPT = [...Object.keys(LOGO_TYPES).map((e) => `.${e}`), ...new Set(Object.values(LOGO_TYPES))].join(",");
+const LOGO_MAX_BYTES = 5 * 1024 * 1024;
 
 /** Stop listening after this much silence (or when the user taps the mic again). */
 const SILENCE_MS = 2500;
@@ -71,6 +77,8 @@ export default function QRAgent({
   const silenceRef = useRef<number | undefined>(undefined);
   const heardRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
 
   useEffect(() => setVoiceOk(Boolean(speechCtor())), []);
 
@@ -209,6 +217,44 @@ export default function QRAgent({
     setListening(true);
     armSilence(NO_SPEECH_MS);
     session();
+  };
+
+  const say = (content: string, applied?: string) => setTurns((t) => [...t, { role: "assistant", content, status: "reply", applied }]);
+
+  const uploadLogo = async (file?: File) => {
+    if (logoInputRef.current) logoInputRef.current.value = "";
+    if (!file) return;
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    // Some browsers leave the MIME type empty, so the extension decides; a known MIME type must still match it.
+    if (!LOGO_TYPES[ext] || (file.type && file.type !== LOGO_TYPES[ext])) {
+      say(`“${file.name}” isn’t a supported logo file. Please upload a PNG, JPG, WebP or SVG image.`);
+      return;
+    }
+    if (file.size > LOGO_MAX_BYTES) {
+      say("That logo is larger than 5 MB. Please upload a smaller file.");
+      return;
+    }
+    setLogoBusy(true);
+    try {
+      const logo = await imageFileToDataUrl(file, 512);
+      setTurns((t) => [...t, { role: "user", content: `Uploaded logo: ${file.name}` }]);
+      onApply({ design: { ...design, logo, logoClear: true } });
+      say(
+        contentLabel
+          ? "Added your logo to the middle of the QR code. Error correction is set to H so it still scans. Ask me to make it bigger or smaller."
+          : "Got your logo. Tell me what the QR code should do (a link, Wi‑Fi, contact…) and I’ll build it around the logo.",
+        "Logo added",
+      );
+    } catch {
+      say("I couldn’t read that image. Please try another PNG, JPG, WebP or SVG file.");
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
+  const removeLogo = () => {
+    onApply({ design: { ...design, logo: null } });
+    say("Removed the logo.", "Logo removed");
   };
 
   const reset = () => {
@@ -354,6 +400,17 @@ export default function QRAgent({
             placeholder={listening ? "Listening… pause for a moment when you’re done" : "e.g. A QR for my Instagram @arka with a pink gradient and hearts"}
             className="input min-h-[52px] flex-1 resize-none text-sm leading-relaxed"
           />
+          <input ref={logoInputRef} type="file" accept={LOGO_ACCEPT} className="hidden" onChange={(e) => uploadLogo(e.target.files?.[0])} />
+          <button
+            type="button"
+            onClick={() => logoInputRef.current?.click()}
+            disabled={logoBusy}
+            className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300 transition hover:text-white disabled:opacity-50"
+            title="Upload a logo (PNG, JPG, WebP or SVG)"
+            aria-label="Upload a logo"
+          >
+            {logoBusy ? <LoaderCircle size={18} className="animate-spin" /> : <ImagePlus size={18} />}
+          </button>
           {voiceOk && (
             <button
               type="button"
@@ -371,6 +428,17 @@ export default function QRAgent({
             <ArrowUp size={18} />
           </button>
         </form>
+
+        {design.logo && (
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-300">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={design.logo} alt="" className="size-7 rounded-md bg-white object-contain p-0.5" />
+            <span className="min-w-0 flex-1 truncate">Logo in the middle of the QR code</span>
+            <button type="button" onClick={removeLogo} className="inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-slate-400 hover:bg-white/10 hover:text-white">
+              <X size={13} /> Remove
+            </button>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <label className="flex cursor-pointer items-center gap-2">
