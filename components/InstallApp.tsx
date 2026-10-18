@@ -102,7 +102,7 @@ export default function InstallApp() {
           >
             <div className="mb-5 flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/icons/icon-192.png" alt="" className="size-12 shrink-0 rounded-2xl shadow-lg" />
+              <img src="/icons/icon-192-v2.png" alt="" className="size-12 shrink-0 rounded-2xl shadow-lg" />
               <div className="min-w-0 flex-1">
                 <p className="font-semibold">Install Scan Studio</p>
                 <p className="text-xs text-slate-400">Adds an app icon to your Home Screen. It opens full screen and works offline.</p>

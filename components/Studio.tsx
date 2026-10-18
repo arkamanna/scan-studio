@@ -115,7 +115,7 @@ export default function Studio() {
       <header className="mb-8 flex flex-col items-center text-center sm:mb-10">
         <div className="mb-4 flex items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/icon-192.png" alt="" width={40} height={40} className="size-10 drop-shadow-[0_8px_14px_rgba(76,29,149,0.45)]" />
+          <img src="/icons/icon-192-v2.png" alt="" width={40} height={40} className="size-10 drop-shadow-[0_8px_14px_rgba(76,29,149,0.45)]" />
           <span className="text-lg font-semibold tracking-tight">Scan Studio</span>
         </div>
         <div className="-mt-1 mb-5 empty:hidden">

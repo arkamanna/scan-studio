@@ -15,13 +15,13 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#070912",
     categories: ["utilities", "productivity"],
     icons: [
-      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-      { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: "/icons/icon-192-v2.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icons/icon-512-v2.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icons/maskable-512-v2.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
     shortcuts: [
-      { name: "Scan a code", short_name: "Scan", url: "/#scan", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
-      { name: "Make a barcode", short_name: "Barcode", url: "/#barcode", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
+      { name: "Scan a code", short_name: "Scan", url: "/#scan", icons: [{ src: "/icons/icon-192-v2.png", sizes: "192x192" }] },
+      { name: "Make a barcode", short_name: "Barcode", url: "/#barcode", icons: [{ src: "/icons/icon-192-v2.png", sizes: "192x192" }] },
     ],
   };
 }
