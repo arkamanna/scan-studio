@@ -9,6 +9,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.96",
     "@vercel/blob": "^2.8.1",
     "ai": "^7.0.143",
     "barcode-detector": "^3.2.2",

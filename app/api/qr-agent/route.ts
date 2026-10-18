@@ -1,13 +1,20 @@
 import { generateText, Output } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
 import { NextResponse } from "next/server";
 import { agentReplySchema, type AgentReply } from "@/lib/qr-agent-schema";
-import { localAgent, OFF_TOPIC_MESSAGE } from "@/lib/qr-agent-local";
-import { APP_KNOWLEDGE } from "@/lib/qr-agent-knowledge";
+import { APP_KNOWLEDGE, OFF_TOPIC_MESSAGE } from "@/lib/qr-agent-knowledge";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const MODEL = process.env.QR_AGENT_MODEL || "openai/gpt-4.1-mini";
+/** OpenAI model id, e.g. gpt-5-mini. */
+const MODEL_ID = (process.env.QR_AGENT_MODEL || "gpt-5-mini").replace(/^openai\//, "");
+
+/**
+ * With OPENAI_API_KEY the agent talks to OpenAI directly; otherwise it goes through Vercel AI Gateway
+ * (AI_GATEWAY_API_KEY, or the project's OIDC token on Vercel).
+ */
+const model = () => (process.env.OPENAI_API_KEY ? createOpenAI({ apiKey: process.env.OPENAI_API_KEY })(MODEL_ID) : `openai/${MODEL_ID}`);
 const MAX_MESSAGES = 16;
 const MAX_CHARS = 1200;
 
@@ -66,21 +73,22 @@ export async function POST(req: Request) {
 
   const askFirst = body.askFirst !== false;
   const state = body.state ?? null;
-  const hasCode = Boolean((state as { content?: unknown } | null)?.content);
   const today = typeof body.today === "string" ? body.today.slice(0, 40) : new Date().toISOString().slice(0, 16);
 
   try {
     const { output } = await generateText({
-      model: MODEL,
+      model: model(),
       instructions: instructions(askFirst, today, JSON.stringify(state).slice(0, 2500)),
       messages,
       output: Output.object({ schema: agentReplySchema }),
-      maxOutputTokens: 1200,
+      // GPT-5 models reason before answering; minimal effort keeps replies fast. Reasoning tokens count towards the cap.
+      providerOptions: { openai: { reasoningEffort: "minimal" } },
+      maxOutputTokens: 2500,
       abortSignal: AbortSignal.timeout(25_000),
     });
-    return NextResponse.json({ reply: output satisfies AgentReply, mode: "ai" });
+    return NextResponse.json({ reply: output satisfies AgentReply });
   } catch (e) {
-    console.error("qr-agent: AI call failed, using the basic agent", (e as Error)?.message);
-    return NextResponse.json({ reply: localAgent(messages, askFirst, hasCode), mode: "basic" });
+    console.error("qr-agent: AI call failed", (e as Error)?.message);
+    return NextResponse.json({ error: "The agent is busy right now. Please try again in a moment." }, { status: 503 });
   }
 }

@@ -16,6 +16,9 @@ const groupLines = CODE_GROUPS.map(
     g.types.map((t) => `  - ${t.bcid}: ${t.label}, ${t.use}. Rule: ${t.rule} Example: ${t.sample}${t.scannable ? "" : " (phones can't scan it; needs a dedicated scanner)"}`).join("\n"),
 ).join("\n");
 
+export const OFF_TOPIC_MESSAGE =
+  "Sorry, I can only help with QR codes and the other codes in Scan Studio, so I can’t answer that. Tell me what your code should do (a link, Wi‑Fi, contact, barcode…) and how it should look.";
+
 /** Everything the agent knows about Scan Studio. */
 export const APP_KNOWLEDGE = `SCAN STUDIO: a free web app (also installable as a phone/desktop app via the Install button under the logo) to create and scan codes. Everything runs in the browser; files are only uploaded if the user chooses "share as link". Curated by Arka Manna (Endorsements button at the bottom).
 

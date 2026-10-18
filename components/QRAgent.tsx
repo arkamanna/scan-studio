@@ -29,10 +29,8 @@ type Turn =
   | { role: "assistant"; content: string; questions?: AgentReply["questions"]; status: AgentReply["status"]; applied?: string };
 
 const SUGGESTIONS = [
-  "Wi‑Fi QR for my café network BeanHouse, password latte2026, warm brown colours",
-  "Link to arkamanna.com with a purple gradient and rounded dots, then download it",
-  "EAN-13 barcode for 590123412345",
-  "Which code should I use for a boarding pass?",
+  "Wi‑Fi QR for my café with warm brown colours",
+  "QR for my website with a purple gradient and rounded dots",
 ];
 
 /* Minimal Web Speech API typing (not in TypeScript's DOM lib yet). */
@@ -66,7 +64,6 @@ export default function QRAgent({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [askFirst, setAskFirst] = useState(true);
-  const [basic, setBasic] = useState(false);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [listening, setListening] = useState(false);
   const [voiceOk, setVoiceOk] = useState(false);
@@ -117,9 +114,8 @@ export default function QRAgent({
           today: new Date().toString().slice(0, 21),
         }),
       });
-      const data = (await res.json()) as { reply?: AgentReply; mode?: "ai" | "basic"; error?: string };
+      const data = (await res.json().catch(() => ({}))) as { reply?: AgentReply; error?: string };
       if (!res.ok || !data.reply) throw new Error(data.error || "The agent couldn’t answer just now.");
-      setBasic(data.mode === "basic");
       const reply = data.reply;
 
       const applied: string[] = [];
@@ -397,7 +393,7 @@ export default function QRAgent({
                 send(input);
               }
             }}
-            placeholder={listening ? "Listening… pause for a moment when you’re done" : "e.g. A QR for my Instagram @arka with a pink gradient and hearts"}
+            placeholder={listening ? "Listening… pause for a moment when you’re done" : "e.g. A QR for my Instagram page with a pink gradient and hearts"}
             className="input min-h-[52px] flex-1 resize-none text-sm leading-relaxed"
           />
           <input ref={logoInputRef} type="file" accept={LOGO_ACCEPT} className="hidden" onChange={(e) => uploadLogo(e.target.files?.[0])} />
@@ -445,7 +441,7 @@ export default function QRAgent({
             <input type="checkbox" className="size-4 accent-violet-500" checked={askFirst} onChange={(e) => setAskFirst(e.target.checked)} />
             Ask me about the design first
           </label>
-          {voiceError ? <span className="text-amber-300">{voiceError}</span> : basic ? <span>Basic mode: AI is unavailable, simple requests still work.</span> : null}
+          {voiceError && <span className="text-amber-300">{voiceError}</span>}
         </div>
       </div>
     </CollapsibleCard>
