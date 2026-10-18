@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type ComponentType, type ReactNode } from "react";
-import { CalendarDays, Contact, FileText, ImageIcon, Link2, Mail, MapPin, MessageCircle, MessageSquare, Phone, Type, Wifi } from "lucide-react";
+import { useCallback, useState, type ComponentType, type ReactNode } from "react";
+import { CalendarDays, Contact, Sparkles, FileText, ImageIcon, Link2, Mail, MapPin, MessageCircle, MessageSquare, Phone, Type, Wifi } from "lucide-react";
 import QRPreview from "./QRPreview";
 import QRDesigner from "./QRDesigner";
+import QRAgent from "./QRAgent";
 import FileForm from "./FileForm";
 import { ContactForm, EmailForm, EventForm, LinkForm, LocationForm, PhoneForm, SmsForm, TextForm, WhatsAppForm, WifiForm } from "./forms";
 import type { OnResult, Result } from "@/lib/payloads";
@@ -70,17 +71,36 @@ export default function QRGenerator() {
   const [modeId, setModeId] = useState("link");
   const [result, setResult] = useState<Result>(null);
   const [design, setDesign] = useState<QrDesign>(DEFAULT_DESIGN);
+  /** Set while the preview shows content made by the QR agent; typing in a form takes over again. */
+  const [agentLabel, setAgentLabel] = useState<string | null>(null);
   const mode = ALL.find((m) => m.id === modeId)!;
 
   const select = (id: string) => {
     if (id === modeId) return;
     setResult(null);
+    setAgentLabel(null);
     setModeId(id);
   };
+
+  const fromForm = useCallback((r: Result) => {
+    setAgentLabel(null);
+    setResult(r);
+  }, []);
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_400px] [&>*]:min-w-0">
       <div className="space-y-6">
+        <QRAgent
+          design={design}
+          contentLabel={agentLabel ?? (result ? `${mode.label} (from the form)` : null)}
+          onApply={({ result: r, label, design: d }) => {
+            if (r) {
+              setResult(r);
+              setAgentLabel(label ?? "QR agent");
+            }
+            setDesign(d);
+          }}
+        />
         <section className="card p-4 sm:p-6">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Content</p>
           <div className="grid grid-cols-4 gap-2">
@@ -103,7 +123,15 @@ export default function QRGenerator() {
                 <p className="text-sm text-slate-400">{mode.blurb}</p>
               </div>
             </div>
-            <mode.Form key={mode.id} onResult={setResult} />
+            {agentLabel && (
+              <p className="mb-4 flex items-start gap-2 rounded-2xl border border-violet-400/20 bg-violet-500/10 px-3.5 py-2.5 text-sm text-violet-100">
+                <Sparkles size={16} className="mt-0.5 shrink-0 text-violet-300" />
+                <span className="min-w-0 [overflow-wrap:anywhere]">
+                  The preview shows the agent’s code: <b className="font-medium">{agentLabel}</b>. Fill in a form below to replace it.
+                </span>
+              </p>
+            )}
+            <mode.Form key={mode.id} onResult={fromForm} />
           </div>
         </section>
         <QRDesigner design={design} onChange={setDesign} />

@@ -45,6 +45,30 @@ export const DEFAULT_DESIGN: QrDesign = {
   captionSize: 7,
 };
 
+export const THEMES: { name: string; design: Partial<QrDesign> }[] = [
+  { name: "Classic", design: { dots: "square", frame: "square", ball: "square", fill: { ...DEFAULT_DESIGN.fill }, eyeColor: null, background: "#ffffff", transparent: false, captionColor: "#0f172a" } },
+  {
+    name: "Night",
+    design: { dots: "dots", frame: "rounded", ball: "rounded", fill: { type: "solid", color: "#ffffff", color2: "#94a3b8", angle: 45 }, eyeColor: null, background: "#0b0b0f", transparent: false, captionColor: "#ffffff" },
+  },
+  {
+    name: "Aurora",
+    design: { dots: "rounded", frame: "rounded", ball: "circle", fill: { type: "linear", color: "#7c3aed", color2: "#06b6d4", angle: 45 }, eyeColor: null, background: "#ffffff", transparent: false, captionColor: "#5b21b6" },
+  },
+  {
+    name: "Sunset",
+    design: { dots: "star", frame: "circle", ball: "circle", fill: { type: "radial", color: "#db2777", color2: "#f97316", angle: 45 }, eyeColor: "#be185d", background: "#fff7ed", transparent: false, captionColor: "#be185d" },
+  },
+  {
+    name: "Forest",
+    design: { dots: "leaf", frame: "leaf", ball: "leaf", fill: { type: "linear", color: "#14532d", color2: "#16a34a", angle: 90 }, eyeColor: null, background: "#f0fdf4", transparent: false, captionColor: "#14532d" },
+  },
+  {
+    name: "Love",
+    design: { dots: "heart", frame: "rounded", ball: "circle", fill: { type: "linear", color: "#e11d48", color2: "#a21caf", angle: 135 }, eyeColor: null, background: "#fff1f2", transparent: false, captionColor: "#be123c" },
+  },
+];
+
 const f = (n: number) => +n.toFixed(3);
 const pt = (x: number, y: number) => `${f(x)} ${f(y)}`;
 
