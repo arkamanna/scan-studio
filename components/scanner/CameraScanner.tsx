@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CameraOff, Flashlight, FlashlightOff, LoaderCircle, RefreshCw, ScanLine, ShieldAlert, SwitchCamera, Upload } from "lucide-react";
-import { getLiveDetector, type DetectedBarcode as Detected, type Found } from "@/lib/detector";
+import { getDetector, getLiveDetector, type DetectedBarcode as Detected, type Found } from "@/lib/detector";
 
 type Status = "idle" | "starting" | "scanning" | "paused" | "error";
 type Facing = "user" | "environment";
@@ -17,19 +17,20 @@ const REPEAT_WINDOW_MS = 1500;
 const SCAN_INTERVAL_MS = 40;
 /** Longest side handed to the decoder for wide views; bigger frames are slower without reading better. */
 const DECODE_MAX_SIDE = 960;
-/** Tight centre crops keep full camera resolution (up to this size) so tiny codes still have enough pixels. */
-const TIGHT_MAX_SIDE = 1400;
 const ZOOM_STEPS = [1, 2, 3, 4];
 
 /**
- * Decode passes, cycled frame by frame: [share of the view to crop, max side]. Tight crops dominate because
- * small codes are the hard case; the wider passes catch codes held off-centre.
+ * Decode passes, cycled frame by frame: share of the view to crop, longest side to decode at, and how far a crop
+ * may be enlarged. zxing needs roughly 3 pixels per module, so tiny codes get full-resolution and enlarged centre
+ * crops; the wider passes catch codes held off-centre.
  */
-const PASSES: [number, number][] = [
-  [0.45, TIGHT_MAX_SIDE],
-  [0.75, DECODE_MAX_SIDE],
-  [0.32, TIGHT_MAX_SIDE],
-  [1, DECODE_MAX_SIDE],
+const PASSES: { share: number; maxSide: number; maxScale: number }[] = [
+  { share: 0.45, maxSide: 1600, maxScale: 1 },
+  { share: 0.75, maxSide: DECODE_MAX_SIDE, maxScale: 1 },
+  { share: 0.2, maxSide: 1200, maxScale: 3 },
+  { share: 0.45, maxSide: 1600, maxScale: 1 },
+  { share: 1, maxSide: DECODE_MAX_SIDE, maxScale: 1 },
+  { share: 0.12, maxSide: 1000, maxScale: 4 },
 ];
 
 type Zoom = { hardware: boolean; min: number; max: number; value: number };
@@ -131,7 +132,7 @@ export default function CameraScanner({
    * "Busy" errors are retried because phones release the previous camera asynchronously.
    */
   const openStream = async ({ deviceId: id, facing: face }: CameraChoice) => {
-    const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+    const size = { width: { ideal: 2560 }, height: { ideal: 1440 } };
     const attempts: MediaTrackConstraints[] = id
       ? [{ deviceId: { exact: id }, ...size }, { deviceId: { exact: id } }]
       : [{ facingMode: { exact: face ?? "environment" }, ...size }, { facingMode: face ?? "environment" }];
@@ -306,18 +307,20 @@ export default function CameraScanner({
     const grab = (video: HTMLVideoElement) => {
       const vw = video.videoWidth;
       const vh = video.videoHeight;
-      const [share, maxSide] = PASSES[frame++ % PASSES.length];
+      const { share, maxSide, maxScale } = PASSES[frame++ % PASSES.length];
       const digital = zoomRef.current.hardware ? 1 : zoomRef.current.value;
       const f = Math.min(1, share / digital);
       const sw = Math.round(vw * f);
       const sh = Math.round(vh * f);
       const sx = Math.round((vw - sw) / 2);
       const sy = Math.round((vh - sh) / 2);
-      const scale = Math.min(1, maxSide / Math.max(sw, sh));
+      const scale = Math.min(maxScale, maxSide / Math.max(sw, sh));
       const canvas = (frameRef.current ??= document.createElement("canvas"));
       canvas.width = Math.round(sw * scale);
       canvas.height = Math.round(sh * scale);
-      canvas.getContext("2d", { willReadFrequently: true })!.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
       return { canvas, sx, sy, scale };
     };
 
@@ -326,13 +329,15 @@ export default function CameraScanner({
       const video = videoRef.current;
       if (video && video.readyState >= 2 && video.videoWidth) {
         try {
-          const { detector, native } = await getLiveDetector();
+          const liveDetector = await getLiveDetector();
           let codes: Detected[];
-          if (native && frame % 2 === 1 && (zoomRef.current.hardware || zoomRef.current.value === 1)) {
+          if (liveDetector.native && frame % 2 === 1 && (zoomRef.current.hardware || zoomRef.current.value === 1)) {
             frame++;
-            codes = await detector.detect(video);
+            codes = await liveDetector.detector.detect(video);
           } else {
             const { canvas, sx, sy, scale } = grab(video);
+            // Built-in detectors skip Micro QR, rMQR, MaxiCode, DataBar…; every few frames let zxing look too.
+            const detector = liveDetector.native && frame % 3 === 0 ? await getDetector() : liveDetector.detector;
             codes = (await detector.detect(canvas)).map((c) => ({
               ...c,
               cornerPoints: c.cornerPoints.map((p) => ({ x: sx + p.x / scale, y: sy + p.y / scale })) as Detected["cornerPoints"],

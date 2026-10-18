@@ -16,6 +16,35 @@ type Item = {
   error?: string;
 };
 
+async function detectInTiles(detector: Awaited<ReturnType<typeof getDetector>>, bitmap: ImageBitmap) {
+  const { width, height } = bitmap;
+  const seen = new Map<string, Found & { points: Point[] }>();
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  ctx.imageSmoothingQuality = "high";
+  for (const grid of [2, 3]) {
+    const tw = width / grid;
+    const th = height / grid;
+    // Tiles overlap by half so a code on a seam is still whole in one of them.
+    for (let gy = 0; gy <= (grid - 1) * 2; gy++) {
+      for (let gx = 0; gx <= (grid - 1) * 2; gx++) {
+        const sx = (gx * tw) / 2;
+        const sy = (gy * th) / 2;
+        const scale = Math.min(3, 1400 / Math.max(tw, th));
+        canvas.width = Math.round(tw * scale);
+        canvas.height = Math.round(th * scale);
+        ctx.drawImage(bitmap, sx, sy, tw, th, 0, 0, canvas.width, canvas.height);
+        for (const c of await detector.detect(canvas)) {
+          if (seen.has(c.rawValue)) continue;
+          seen.set(c.rawValue, { raw: c.rawValue, format: c.format, points: c.cornerPoints.map((p) => ({ x: sx + p.x / scale, y: sy + p.y / scale })) });
+        }
+      }
+    }
+    if (seen.size) break;
+  }
+  return [...seen.values()];
+}
+
 async function detectInImage(file: File) {
   const detector = await getDetector();
   const bitmap = await createImageBitmap(file);
@@ -35,13 +64,13 @@ async function detectInImage(file: File) {
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     codes = await detector.detect(canvas);
   }
+  let found: (Found & { points: Point[] })[] = codes.map((c) => ({ raw: c.rawValue, format: c.format, points: c.cornerPoints.map((p) => ({ x: p.x / factor, y: p.y / factor })) }));
+
+  // Tiny codes in a big photo: scan overlapping tiles, enlarging small ones so each module gets enough pixels.
+  if (!found.length) found = await detectInTiles(detector, bitmap);
   bitmap.close();
 
-  return {
-    width,
-    height,
-    codes: codes.map((c) => ({ raw: c.rawValue, format: c.format, points: c.cornerPoints.map((p) => ({ x: p.x / factor, y: p.y / factor })) })),
-  };
+  return { width, height, codes: found };
 }
 
 export default function ImageScanner({ onDetect }: { onDetect: (found: Found[], source: string) => void }) {

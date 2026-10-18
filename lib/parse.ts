@@ -69,6 +69,19 @@ const FORMAT_NAMES: Record<string, string> = {
   databar: "GS1 DataBar",
   databar_expanded: "GS1 DataBar Expanded",
   databar_limited: "GS1 DataBar Limited",
+  databar_omni: "GS1 DataBar",
+  databar_stacked: "GS1 DataBar Stacked",
+  databar_stacked_omni: "GS1 DataBar Stacked",
+  databar_expanded_stacked: "GS1 DataBar Expanded Stacked",
+  compact_pdf417: "Compact PDF417",
+  aztec_code: "Aztec",
+  aztec_rune: "Aztec Rune",
+  telepen: "Telepen",
+  telepen_alpha: "Telepen",
+  telepen_numeric: "Telepen",
+  code_32: "Code 32",
+  pzn: "PZN",
+  dx_film_edge: "DX Film Edge",
 };
 
 export const formatName = (f: string) => FORMAT_NAMES[f] ?? f.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
