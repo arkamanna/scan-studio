@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { canRecord, startRecording, type Recording } from "@/lib/voice-recorder";
 import { ArrowUp, Bot, ImagePlus, Info, LoaderCircle, Mic, MicOff, RotateCcw, Sparkles, Wand2, X } from "lucide-react";
 import { CollapsibleCard } from "./design-controls";
 import type { AgentReply } from "@/lib/qr-agent-schema";
@@ -19,6 +20,8 @@ const LOGO_MAX_BYTES = 5 * 1024 * 1024;
 const SILENCE_MS = 2500;
 /** Give up if nothing at all is heard for this long. */
 const NO_SPEECH_MS = 8000;
+
+const ECC_NAMES: Record<string, string> = { L: "Low (7%)", M: "Medium (15%)", Q: "Quartile (25%)", H: "High (30%)" };
 
 const TAB_NAMES: Record<string, string> = {
   qr: "QR Code", barcode: "Barcode", datamatrix: "Data Matrix", aztec: "Aztec", pdf417: "PDF417", gs1: "GS1", postal: "Postal", more: "More", scan: "Scan",
@@ -71,7 +74,12 @@ export default function QRAgent({
   const [listening, setListening] = useState(false);
   const [voiceOk, setVoiceOk] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
   const recRef = useRef<Recognition | null>(null);
+  const recordingRef = useRef<Recording | null>(null);
+  /** Use recording + server transcription instead of the browser's speech recognition (missing or failing). */
+  const recordModeRef = useRef(false);
+  const switchToRecordRef = useRef(false);
   const baseRef = useRef("");
   const wantRef = useRef(false);
   const silenceRef = useRef<number | undefined>(undefined);
@@ -80,16 +88,51 @@ export default function QRAgent({
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [logoBusy, setLogoBusy] = useState(false);
 
-  useEffect(() => setVoiceOk(Boolean(speechCtor())), []);
+  useEffect(() => setVoiceOk(Boolean(speechCtor()) || canRecord()), []);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
   }, [turns, busy]);
 
+  /** Stops listening and drops anything not yet transcribed. */
   const stopVoice = () => {
     wantRef.current = false;
     window.clearTimeout(silenceRef.current);
     recRef.current?.stop();
+    recordingRef.current?.cancel();
+  };
+
+  const recordVoice = async () => {
+    setVoiceError(null);
+    let recording: Recording;
+    try {
+      recording = await startRecording({ silenceMs: SILENCE_MS, noSpeechMs: NO_SPEECH_MS });
+    } catch (e) {
+      setVoiceError((e as Error)?.name === "NotAllowedError" ? "Microphone permission was blocked." : "Couldn’t use the microphone.");
+      return;
+    }
+    recordingRef.current = recording;
+    setListening(true);
+    const audio = await recording.done;
+    recordingRef.current = null;
+    setListening(false);
+    if (!audio) return;
+
+    setTranscribing(true);
+    try {
+      const form = new FormData();
+      form.append("audio", audio, `voice.${audio.type.includes("mp4") ? "m4a" : audio.type.includes("ogg") ? "ogg" : "webm"}`);
+      const res = await fetch("/api/transcribe", { method: "POST", body: form });
+      const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
+      if (!res.ok || typeof data.text !== "string") throw new Error(data.error || "Couldn’t understand that, please try again.");
+      const heard = data.text.trim();
+      if (heard) setInput((v) => (v.trim() ? `${v.trim()} ` : "") + heard);
+      else setVoiceError("Couldn’t hear that, please try again.");
+    } catch (e) {
+      setVoiceError((e as Error).message);
+    } finally {
+      setTranscribing(false);
+    }
   };
 
   useEffect(() => stopVoice, []);
@@ -137,7 +180,7 @@ export default function QRAgent({
         }
         if (reply.ecc || reply.actions?.length) {
           emit("ss:qr", { ecc: reply.ecc ?? undefined, actions: reply.actions ?? undefined });
-          if (reply.ecc) applied.push(`Error correction ${reply.ecc}`);
+          if (reply.ecc) applied.push(`Damage protection: ${ECC_NAMES[reply.ecc]}`);
           reply.actions?.forEach((a) => applied.push(a.replace("_", " ").replace("download png", "Downloaded PNG").replace("download svg", "Downloaded SVG")));
         }
         if (reply.code) {
@@ -162,12 +205,17 @@ export default function QRAgent({
    * SILENCE_MS (or taps the mic). Each session's text is appended to what was already heard.
    */
   const toggleVoice = () => {
+    if (transcribing) return;
     if (listening) {
-      stopVoice();
+      if (recordingRef.current) recordingRef.current.stop();
+      else stopVoice();
       return;
     }
     const Ctor = speechCtor();
-    if (!Ctor) return;
+    if (!Ctor || recordModeRef.current) {
+      if (canRecord()) recordVoice();
+      return;
+    }
     wantRef.current = true;
     heardRef.current = false;
     let text = input ? `${input.trim()} ` : "";
@@ -199,6 +247,11 @@ export default function QRAgent({
       rec.onerror = (e) => {
         if (e.error === "no-speech" || e.error === "aborted") return;
         wantRef.current = false;
+        if ((e.error === "network" || e.error === "service-not-allowed" || e.error === "language-not-supported") && canRecord()) {
+          recordModeRef.current = true;
+          switchToRecordRef.current = true;
+          return;
+        }
         setVoiceError(e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone permission was blocked." : "Couldn’t hear that, please try again.");
       };
       rec.onend = () => {
@@ -214,6 +267,10 @@ export default function QRAgent({
         window.clearTimeout(silenceRef.current);
         setListening(false);
         setInput((v) => v.trim());
+        if (switchToRecordRef.current) {
+          switchToRecordRef.current = false;
+          recordVoice();
+        }
       };
       recRef.current = rec;
       rec.start();
@@ -247,7 +304,7 @@ export default function QRAgent({
       onApply({ design: { ...design, logo, logoClear: true } });
       say(
         contentLabel
-          ? "Added your logo to the middle of the QR code. Error correction is set to H so it still scans. Ask me to make it bigger or smaller."
+          ? "Added your logo to the middle of the QR code. Damage protection is set to High so it still scans with the logo covering part of it. Ask me to make it bigger or smaller."
           : "Got your logo. Tell me what the QR code should do (a link, Wi‑Fi, contact…) and I’ll build it around the logo.",
         "Logo added",
       );
@@ -276,7 +333,7 @@ export default function QRAgent({
   const pending = last?.role === "assistant" && last.questions?.length ? last.questions : null;
   const submitAnswers = () => {
     if (!pending) return;
-    const lines = pending.map((q, i) => `${q.question} ${answers[i]?.trim() || "you choose"}`);
+    const lines = pending.map((q, i) => `${q.question} ${answers[i]?.trim() || "(no preference, pick something fitting for me)"}`);
     send(lines.join("\n"));
   };
 
@@ -410,7 +467,7 @@ export default function QRAgent({
                 send(input);
               }
             }}
-            placeholder={listening ? "Listening… pause for a moment when you’re done" : "e.g. A QR for my Instagram page with a pink gradient and hearts"}
+            placeholder={transcribing ? "Turning your voice into text…" : listening ? "Listening… pause for a moment when you’re done" : "e.g. A QR for my Instagram page with a pink gradient and hearts"}
             className="input min-h-[52px] flex-1 resize-none text-sm leading-relaxed"
           />
           <input ref={logoInputRef} type="file" accept={LOGO_ACCEPT} className="hidden" onChange={(e) => uploadLogo(e.target.files?.[0])} />
@@ -428,13 +485,14 @@ export default function QRAgent({
             <button
               type="button"
               onClick={toggleVoice}
-              className={`grid size-11 shrink-0 cursor-pointer place-items-center rounded-xl border transition ${
+              disabled={transcribing}
+              className={`grid size-11 shrink-0 cursor-pointer place-items-center rounded-xl border transition disabled:opacity-60 ${
                 listening ? "animate-pulse border-rose-400/50 bg-rose-500/20 text-rose-200" : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"
               }`}
-              title={listening ? "Stop listening" : "Speak your request"}
-              aria-label={listening ? "Stop listening" : "Speak your request"}
+              title={transcribing ? "Turning your voice into text" : listening ? "Stop listening" : "Speak your request"}
+              aria-label={transcribing ? "Turning your voice into text" : listening ? "Stop listening" : "Speak your request"}
             >
-              {listening ? <MicOff size={18} /> : <Mic size={18} />}
+              {transcribing ? <LoaderCircle size={18} className="animate-spin" /> : listening ? <MicOff size={18} /> : <Mic size={18} />}
             </button>
           )}
           <button type="submit" className="btn-primary size-11 shrink-0 p-0" disabled={busy || !input.trim()} aria-label="Send">

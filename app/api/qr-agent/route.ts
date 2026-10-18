@@ -97,6 +97,24 @@ async function limited(ip: string) {
   return recent.length > LIMIT;
 }
 
+const ECC_WORDS =
+  /error|correction|ecc|damage|robust|durab|level\s*[lmqh]\b|\b[lmqh]\s*level|त्रुटि|এরর|corrección|correction|fehlerkorrektur|correção/i;
+const ACTION_WORDS =
+  /download|save|export|print|copy|share|\b(png|svg)\b|डाउनलोड|सेव|प्रिंट|शेयर|ডাউনলোড|সেভ|প্রিন্ট|শেয়ার|descarg|guardar|imprim|copiar|compartir|télécharg|enregistr|copier|partager|herunterlad|speicher|druck|kopier|teilen|baixar|salvar|compartilh/i;
+const PLACEHOLDER_CAPTION = /^\W*(you choose|your choice|up to you|you decide|no preference|pick something|anything|none|n\/a)\b/i;
+
+/**
+ * Keeps the AI to what the user actually asked for: error correction and downloads/prints only when requested
+ * in the latest message, and never a "you choose"-style answer used as the caption text.
+ */
+function tidy(reply: AgentReply, lastUser: string): AgentReply {
+  const out = { ...reply };
+  if (out.ecc && !ECC_WORDS.test(lastUser)) out.ecc = null;
+  if (out.actions?.length && !ACTION_WORDS.test(lastUser)) out.actions = null;
+  if (out.design?.caption && PLACEHOLDER_CAPTION.test(out.design.caption)) out.design = { ...out.design, caption: null };
+  return out;
+}
+
 /** Turns a non-QR code with a value its tab can't render into a question, so the user isn't sent to a broken code. */
 function checkCode(reply: AgentReply): AgentReply {
   if (reply.status !== "create" || !reply.code) return reply;
@@ -126,8 +144,8 @@ Reply with JSON matching the schema. Rules:
    Off-topic (general knowledge, coding help, maths, news, writing unrelated to a code, personal advice): status "off_topic" with message "${OFF_TOPIC_MESSAGE}" Never answer the off-topic question. Greetings or thanks: status "reply", warm, steer back to codes.
 2. QR codes: use "content" (kind + fields; link and text may set "target") and "design". Pick the kind that fits; app links (YouTube, Instagram…) are links.
 3. Missing essentials: if you can't build it without guessing (no URL, no Wi-Fi name, no phone number, invalid barcode value…), status "ask" with questions whose options are [] so the user types it. Never invent passwords, numbers, addresses or URLs. Example values are only OK when the user asks for a sample.
-4. Design questionnaire (QR only): when CONTEXT says askFirst=true and the user hasn't described the look and you haven't asked yet in this conversation, status "ask" with 2-3 short questions (style, colours, caption), each with 3-5 options tailored to their content (e.g. warm browns for a café). Ask content and design questions together when both are needed. Don't ask twice; once answered or if they say "you choose", create it. When askFirst=false, don't ask about the design; choose a fitting design yourself.
-5. Create/update QR: status "create" with full content (repeat earlier details when only the design changes) and design. Choose a theme and/or fields; null leaves a field unchanged. Keep strong contrast (dark code on light background, or the Night theme) so it scans. Caption max ~30 characters. Set "ecc" only when asked (a logo forces H anyway). Set "actions" only when the user asks to download (PNG default, SVG if asked), print, copy or share.
+4. Design questionnaire (QR only): answers like "no preference", "you choose" or "up to you" mean you pick a fitting value yourself; never put those words into the caption or any other field. When CONTEXT says askFirst=true and the user hasn't described the look and you haven't asked yet in this conversation, status "ask" with 2-3 short questions (style, colours, caption), each with 3-5 options tailored to their content (e.g. warm browns for a café). Ask content and design questions together when both are needed. Don't ask twice; once answered or if they say "you choose", create it. When askFirst=false, don't ask about the design; choose a fitting design yourself.
+5. Create/update QR: status "create" with full content (repeat earlier details when only the design changes) and design. Choose a theme and/or fields; null leaves a field unchanged. Keep strong contrast (dark code on light background, or the Night theme) so it scans. Caption max ~30 characters. Set "ecc" only when the user asks about error correction (a logo already forces H automatically, so never set it for a logo). Set "actions" only when the user asks to download (PNG default, SVG if asked), print, copy or share.
 6. Follow-ups like "make it red", "bigger caption", "share via WhatsApp instead": status "create", keep everything else.
 7. Other codes (barcode, Data Matrix, Aztec, PDF417, GS1, postal, more): status "create" with "code" {tab, type id from the catalogue, value}; content/design null. Use the type's real format (EAN/UPC digits with a valid check digit, GS1 Application Identifiers in brackets like (01)09521234543213, postal digit counts); the app checks the value and asks again if it doesn't fit. For retail products suggest EAN-13 (UPC-A in US/Canada); for shipping Code 128 or GS1-128; for medicines GS1 DataMatrix; for tickets Aztec; for IDs PDF417. Mention that colours and other options are in that tab's Design section.
 8. "Open the scanner"/"take me to Aztec": status "reply" with "navigate". You can't scan images yourself; send them to the Scan tab. Photos, documents and logos need the user to upload them: point to Photo/Document mode, or for a logo the image button next to the chat box (PNG, JPG, WebP or SVG). When the state shows hasLogo, you can resize it with logoSize.
@@ -181,7 +199,7 @@ export async function POST(req: Request) {
         maxRetries: 0,
         abortSignal: AbortSignal.timeout(Math.min(left, 18_000)),
       });
-      return NextResponse.json({ reply: checkCode(secret.restore(output satisfies AgentReply)), mode: "ai", provider: c.name });
+      return NextResponse.json({ reply: checkCode(tidy(secret.restore(output satisfies AgentReply), messages.at(-1)!.content)), mode: "ai", provider: c.name });
     } catch (e) {
       const cause = (e as { cause?: unknown })?.cause;
       const api = APICallError.isInstance(e) ? e : APICallError.isInstance(cause) ? cause : null;
