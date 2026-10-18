@@ -456,7 +456,7 @@ export default function QRAgent({
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <label className="flex cursor-pointer items-center gap-2">
             <input type="checkbox" className="size-4 accent-violet-500" checked={askFirst} onChange={(e) => setAskFirst(e.target.checked)} />
-            Ask me about the design first
+            Ask me questions about the design first
           </label>
           {voiceError ? <span className="text-amber-300">{voiceError}</span> : basic ? <span className="text-amber-300">Basic agent answering: full AI is unavailable</span> : null}
         </div>
