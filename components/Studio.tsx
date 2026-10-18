@@ -14,6 +14,7 @@ import Curator from "./Curator";
 type Tab = "qr" | "barcode" | "datamatrix" | "aztec" | "pdf417" | "gs1" | "postal" | "more" | "scan";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: "scan", label: "Scan", icon: <ScanLine size={16} /> },
   { id: "qr", label: "QR Code", icon: <QrCode size={16} /> },
   { id: "barcode", label: "Barcode", icon: <Barcode size={16} /> },
   { id: "datamatrix", label: "Data Matrix", icon: <Grid3x3 size={16} /> },
@@ -22,7 +23,6 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "gs1", label: "GS1", icon: <Package size={16} /> },
   { id: "postal", label: "Postal", icon: <Mail size={16} /> },
   { id: "more", label: "More", icon: <Shapes size={16} /> },
-  { id: "scan", label: "Scan", icon: <ScanLine size={16} /> },
 ];
 
 const TAB_IDS = new Set<string>(TABS.map((t) => t.id));

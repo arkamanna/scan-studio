@@ -22,7 +22,7 @@ export const OFF_TOPIC_MESSAGE =
 /** Everything the agent knows about Scan Studio. */
 export const APP_KNOWLEDGE = `SCAN STUDIO: a free web app (also installable as a phone/desktop app via the Install button under the logo) to create and scan codes. Everything runs in the browser; files are only uploaded if the user chooses "share as link". Curated by Arka Manna (Endorsements button at the bottom).
 
-TABS: QR Code, Barcode, Data Matrix, Aztec, PDF417, GS1, Postal, More, Scan.
+TABS: Scan, QR Code, Barcode, Data Matrix, Aztec, PDF417, GS1, Postal, More.
 
 QR CODE TAB (you can fully control it):
 - Content modes: Link (any URL; app links like YouTube, Instagram, Spotify, Maps open in their app; can instead share the link via WhatsApp, SMS, Email or Telegram), Text (rich text editor with bold/italic/underline/strike/sub/superscript Unicode styles; can show the text or send it to WhatsApp, SMS, Email, Telegram, Google Search, Google Translate or Maps), Photo (OCR text from a photo, or upload and share the photo as a link), Document (text from PDF/Word/TXT, or share as a link).
