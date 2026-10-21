@@ -8,7 +8,8 @@ import { copyPng, printSvg, saveBlob, sharePng } from "@/lib/share";
 import { captionText, gradientDef, paint, type Fill } from "@/lib/qr-design";
 import { svgToPng } from "@/lib/raster";
 import { getDetector } from "@/lib/detector";
-import { on, takeFill, type CodeFill } from "@/lib/app-events";
+import { on, takeFill, type CodeFill, type CodeTab, type QrAction } from "@/lib/app-events";
+import QRAgent from "./QRAgent";
 import { RMQR_VERSIONS, type CodeGroup, type CodeType } from "@/lib/code-types";
 
 type Bwip = typeof import("bwip-js/browser");
@@ -93,6 +94,15 @@ export default function CodeGenerator({ group }: { group: CodeGroup }) {
       const t = group.types.find((x) => x.bcid.toLowerCase() === fill.type.toLowerCase() || x.label.toLowerCase() === fill.type.toLowerCase()) ?? group.types[0];
       setTypeId(t.bcid);
       setValue(t.numeric ? fill.value.replace(/\D/g, "") : t.upper ? fill.value.toUpperCase() : fill.value);
+      const d = fill.design;
+      if (d) {
+        if (d.fillType || d.color || d.color2)
+          setFill((f) => ({ ...f, type: d.fillType ?? (d.color2 ? "linear" : f.type), color: d.color ?? f.color, color2: d.color2 ?? f.color2 }));
+        if (d.background) setBg(d.background);
+        if (d.transparent !== null) setTransparent(d.transparent);
+        else if (d.background) setTransparent(false);
+        if (d.heading !== null) setTopText(d.heading.slice(0, 60));
+      }
     };
     apply(takeFill(group.id));
     return on("ss:fill", apply);
@@ -211,9 +221,37 @@ export default function CodeGenerator({ group }: { group: CodeGroup }) {
     if (!(await sharePng(await pngBlob(), filename("png"), type.label))) notify("Sharing not supported here");
   };
 
+  const actionsRef = useRef<Record<QrAction, () => void>>(null!);
+  actionsRef.current = {
+    download_png: () => download("png"),
+    download_svg: () => download("svg"),
+    print: () => printSvg(rendered!.svg, type.label, is2d ? 40 : 70),
+    copy_image: copyImage,
+    share,
+  };
+  const renderedRef = useRef(rendered);
+  renderedRef.current = rendered;
+  useEffect(
+    () =>
+      on("ss:code", ({ tab, actions }) => {
+        if (tab !== group.id) return;
+        // Let the agent's value and design render first.
+        window.setTimeout(() => renderedRef.current && actions.forEach((a) => actionsRef.current[a]?.()), 600);
+      }),
+    [group.id],
+  );
+
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_400px] [&>*]:min-w-0">
       <div className="space-y-6">
+        <QRAgent
+          tab={group.id as CodeTab}
+          code={{
+            state: { tab: group.id, type: typeId, value: value || null, colour: fill, background: bg, transparent, heading: topText || null, hasImage: Boolean(image) },
+            image,
+            onImage: setImage,
+          }}
+        />
         <section className="card p-4 sm:p-6">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{group.heading}</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

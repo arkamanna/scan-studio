@@ -62,6 +62,16 @@ export const agentDesignSchema = z.object({
   logoClear: n(z.boolean()),
 });
 
+export const codeDesignSchema = z.object({
+  fillType: n(z.enum(["solid", "linear", "radial"])),
+  color: n(hex).describe("bars/modules or first gradient colour"),
+  color2: n(hex),
+  background: n(hex),
+  transparent: n(z.boolean()),
+  heading: n(z.string()).describe("text above the code"),
+  caption: n(z.string()).describe("Barcode tab only: text under the bars"),
+});
+
 export const agentReplySchema = z.object({
   status: z.enum(["ask", "create", "off_topic", "reply"]),
   message: z.string(),
@@ -84,6 +94,7 @@ export const agentReplySchema = z.object({
       tab: z.enum(["barcode", "datamatrix", "aztec", "pdf417", "gs1", "postal", "more"]),
       type: z.string().describe("type id, e.g. EAN13"),
       value: z.string(),
+      design: n(codeDesignSchema),
     }),
   ).describe("non-QR code to fill in"),
   navigate: n(z.enum(TAB_IDS)).describe("open a tab"),
@@ -92,3 +103,4 @@ export const agentReplySchema = z.object({
 export type AgentContent = z.infer<typeof agentContentSchema>;
 export type AgentDesign = z.infer<typeof agentDesignSchema>;
 export type AgentReply = z.infer<typeof agentReplySchema>;
+export type CodeDesign = z.infer<typeof codeDesignSchema>;

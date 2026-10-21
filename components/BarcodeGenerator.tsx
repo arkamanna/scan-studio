@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import JsBarcode from "jsbarcode";
 import { Barcode, Check, Copy, Download, Palette, Printer, ScanBarcode, Share2, Shuffle } from "lucide-react";
 import { Field, Input } from "./ui";
@@ -8,7 +8,8 @@ import { CollapsibleCard, ColorField, FillPicker, ImagePicker, Slider } from "./
 import { copyPng, printSvg, saveBlob, sharePng } from "@/lib/share";
 import { captionText, gradientDef, paint, type Fill } from "@/lib/qr-design";
 import { svgToPng } from "@/lib/raster";
-import { on, takeFill, type CodeFill } from "@/lib/app-events";
+import { on, takeFill, type CodeFill, type QrAction } from "@/lib/app-events";
+import QRAgent from "./QRAgent";
 import { BARCODE_FORMATS as FORMATS, type BarcodeFormat as Format } from "@/lib/barcode-formats";
 
 const PRESETS = [
@@ -138,6 +139,16 @@ export default function BarcodeGenerator() {
       setValue(f.numeric ? fill.value.replace(/\D/g, "") : f.upper ? fill.value.toUpperCase() : fill.value);
       setLabel("");
       setShowText(true);
+      const d = fill.design;
+      if (d) {
+        if (d.fillType || d.color || d.color2)
+          setFill((f) => ({ ...f, type: d.fillType ?? (d.color2 ? "linear" : f.type), color: d.color ?? f.color, color2: d.color2 ?? f.color2 }));
+        if (d.background) setBg(d.background);
+        if (d.transparent !== null) setTransparent(d.transparent);
+        else if (d.background) setTransparent(false);
+        if (d.heading !== null) setTopText(d.heading.slice(0, 60));
+        if (d.caption !== null) setLabel(d.caption);
+      }
     };
     apply(takeFill("barcode"));
     return on("ss:fill", apply);
@@ -169,9 +180,37 @@ export default function BarcodeGenerator() {
     if (!(await sharePng(await pngBlob(), filename("png"), "Barcode"))) notify("Sharing not supported here");
   };
 
+  const actionsRef = useRef<Record<QrAction, () => void>>(null!);
+  actionsRef.current = {
+    download_png: () => download("png"),
+    download_svg: () => download("svg"),
+    print: () => printSvg(rendered!.svg, "Barcode", 70),
+    copy_image: copyImage,
+    share,
+  };
+  const renderedRef = useRef(rendered);
+  renderedRef.current = rendered;
+  useEffect(
+    () =>
+      on("ss:code", ({ tab, actions }) => {
+        if (tab !== "barcode") return;
+        // Let the agent's value and design render first.
+        window.setTimeout(() => renderedRef.current && actions.forEach((a) => actionsRef.current[a]?.()), 600);
+      }),
+    [],
+  );
+
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_400px] [&>*]:min-w-0">
       <div className="space-y-6">
+        <QRAgent
+          tab="barcode"
+          code={{
+            state: { tab: "barcode", type: formatId, value: value || null, textUnderBars: label || null, colour: fill, background: bg, transparent, heading: topText || null, hasImage: Boolean(image) },
+            image,
+            onImage: setImage,
+          }}
+        />
         <section className="card p-4 sm:p-6">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Barcode type</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

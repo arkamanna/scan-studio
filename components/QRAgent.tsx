@@ -8,7 +8,7 @@ import type { AgentReply } from "@/lib/qr-agent-schema";
 import { applyAgentDesign, contentToResult, describeState, type AgentMessage } from "@/lib/qr-agent";
 import type { Result } from "@/lib/payloads";
 import type { QrDesign } from "@/lib/qr-design";
-import { emit } from "@/lib/app-events";
+import { emit, type StudioTab } from "@/lib/app-events";
 import { imageFileToDataUrl } from "@/lib/raster";
 
 /** Logo uploads: common logo formats only. */
@@ -32,10 +32,64 @@ type Turn =
   | { role: "assistant"; content: string; questions?: AgentReply["questions"]; status: AgentReply["status"]; applied?: string }
   | { role: "notice"; content: string };
 
-const SUGGESTIONS = [
-  "Wi‑Fi QR for my café with warm brown colours",
-  "QR for my website with a purple gradient and rounded dots",
-];
+type AgentTab = Exclude<StudioTab, "scan">;
+
+/** Per-tab wording: the same agent works in every code tab, focused on that tab's codes. */
+const TAB_COPY: Record<AgentTab, { title: string; subject: string; suggestions: [string, string]; placeholder: string }> = {
+  qr: {
+    title: "QR Agent",
+    subject: "It designs QR codes, fills in any other code type and answers questions about the app.",
+    suggestions: ["Wi‑Fi QR for my café with warm brown colours", "QR for my website with a purple gradient and rounded dots"],
+    placeholder: "e.g. A QR for my Instagram page with a pink gradient and hearts",
+  },
+  barcode: {
+    title: "Barcode Agent",
+    subject: "It picks the right barcode type, fills in the value, styles it and answers questions about barcodes.",
+    suggestions: ["EAN-13 barcode for my product 590123412345 in navy blue", "Code 128 label for SKU BOX-2048 with the heading “Warehouse A”"],
+    placeholder: "e.g. A UPC-A barcode for 03600029145 in dark green",
+  },
+  datamatrix: {
+    title: "Data Matrix Agent",
+    subject: "It fills in Data Matrix codes (including GS1 DataMatrix), styles them and answers questions about them.",
+    suggestions: ["Data Matrix for serial number SN-2026-0042", "Data Matrix for part P-7781 in dark blue with the heading “Part P-7781”"],
+    placeholder: "e.g. A Data Matrix for serial number SN-1001 in purple",
+  },
+  aztec: {
+    title: "Aztec Agent",
+    subject: "It fills in Aztec codes, styles them and answers questions about them.",
+    suggestions: ["Aztec code for ticket TKT-77812 in purple", "Aztec code with the text “Gate 4, Seat 12A” and the heading “Boarding pass”"],
+    placeholder: "e.g. An Aztec code for ticket 4471 with a teal gradient",
+  },
+  pdf417: {
+    title: "PDF417 Agent",
+    subject: "It fills in PDF417 and MicroPDF417 codes, styles them and answers questions about them.",
+    suggestions: ["PDF417 for an ID card: name Jane Doe, ID 123456", "MicroPDF417 for label LOT-5521 in dark red"],
+    placeholder: "e.g. A PDF417 with my membership number 88213",
+  },
+  gs1: {
+    title: "GS1 Agent",
+    subject: "It builds GS1 codes with the right Application Identifiers, styles them and answers questions about GS1.",
+    suggestions: ["GS1-128 label for GTIN 09521234543213 with batch ABC123", "Which GS1 code should I use for a shipping pallet?"],
+    placeholder: "e.g. A GS1-128 for GTIN 09521234543213, expiry 2027-06-30",
+  },
+  postal: {
+    title: "Postal Agent",
+    subject: "It fills in postal barcodes (USPS, Royal Mail, Australia Post…), styles them and answers questions about them.",
+    suggestions: ["POSTNET barcode for ZIP code 90210", "Which postal barcode does Royal Mail use?"],
+    placeholder: "e.g. A POSTNET barcode for ZIP 10001",
+  },
+  more: {
+    title: "Code Agent",
+    subject: "It fills in Micro QR, rMQR, MaxiCode and the other special codes, styles them and answers questions about them.",
+    suggestions: ["Micro QR code for the text HELLO", "Rectangular Micro QR for https://example.com"],
+    placeholder: "e.g. A Micro QR for the text TABLE 7",
+  },
+};
+
+/** What the agent needs from a code tab (everything except QR). */
+export type CodeAgentBinding = { state: Record<string, unknown>; image: string | null; onImage: (image: string | null) => void };
+/** What the agent needs from the QR tab. */
+export type QrAgentBinding = { design: QrDesign; contentLabel: string | null; onApply: (r: { result?: Result; label?: string; design: QrDesign }) => void };
 
 /* Minimal Web Speech API typing (not in TypeScript's DOM lib yet). */
 type Recognition = {
@@ -55,15 +109,9 @@ const speechCtor = () =>
       (window as unknown as { webkitSpeechRecognition?: new () => Recognition }).webkitSpeechRecognition ??
       null);
 
-export default function QRAgent({
-  design,
-  contentLabel,
-  onApply,
-}: {
-  design: QrDesign;
-  contentLabel: string | null;
-  onApply: (r: { result?: Result; label?: string; design: QrDesign }) => void;
-}) {
+export default function QRAgent({ tab = "qr", qr, code }: { tab?: AgentTab; qr?: QrAgentBinding; code?: CodeAgentBinding }) {
+  const copy = TAB_COPY[tab];
+  const image = qr ? qr.design.logo : (code?.image ?? null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [basic, setBasic] = useState(false);
   const modeRef = useRef<"ai" | "basic">("ai");
@@ -156,7 +204,7 @@ export default function QRAgent({
             content: t.role === "assistant" && t.questions?.length ? `${t.content}\n${t.questions.map((q) => `- ${q.question} (${q.options.join(" / ")})`).join("\n")}` : t.content,
           }])),
           askFirst,
-          state: describeState(design, contentLabel),
+          state: qr ? { tab: "qr", ...describeState(qr.design, qr.contentLabel) } : (code?.state ?? { tab }),
           today: new Date().toString().slice(0, 21),
         }),
       });
@@ -172,20 +220,30 @@ export default function QRAgent({
       }
 
       const applied: string[] = [];
+      const actionNames = (actions: NonNullable<AgentReply["actions"]>) =>
+        actions.forEach((a) => applied.push(a.replace("_", " ").replace("download png", "Downloaded PNG").replace("download svg", "Downloaded SVG")));
       if (reply.status === "create") {
         const built = reply.content ? contentToResult(reply.content) : null;
         if (built || reply.design) {
-          onApply({ result: built?.result, label: built?.label, design: applyAgentDesign(design, reply.design) });
-          applied.push(built ? built.label : "Design updated");
-        }
-        if (reply.ecc || reply.actions?.length) {
-          emit("ss:qr", { ecc: reply.ecc ?? undefined, actions: reply.actions ?? undefined });
-          if (reply.ecc) applied.push(`Damage protection: ${ECC_NAMES[reply.ecc]}`);
-          reply.actions?.forEach((a) => applied.push(a.replace("_", " ").replace("download png", "Downloaded PNG").replace("download svg", "Downloaded SVG")));
+          if (qr) qr.onApply({ result: built?.result, label: built?.label, design: applyAgentDesign(qr.design, reply.design) });
+          else {
+            emit("ss:qrapply", { content: reply.content, design: reply.design });
+            emit("ss:tab", { tab: "qr" });
+          }
+          applied.push(built ? built.label : "QR design updated");
         }
         if (reply.code) {
           emit("ss:fill", reply.code);
           applied.push(`${TAB_NAMES[reply.code.tab]} tab · ${reply.code.value}`);
+          if (reply.code.design && Object.values(reply.code.design).some((v) => v !== null)) applied.push("Design updated");
+          if (reply.actions?.length) {
+            emit("ss:code", { tab: reply.code.tab, actions: reply.actions });
+            actionNames(reply.actions);
+          }
+        } else if (reply.ecc || reply.actions?.length) {
+          emit("ss:qr", { ecc: reply.ecc ?? undefined, actions: reply.actions ?? undefined });
+          if (reply.ecc) applied.push(`Damage protection: ${ECC_NAMES[reply.ecc]}`);
+          if (reply.actions?.length) actionNames(reply.actions);
         }
       }
       if (reply.navigate && !reply.code) {
@@ -301,13 +359,18 @@ export default function QRAgent({
     try {
       const logo = await imageFileToDataUrl(file, 512);
       setTurns((t) => [...t, { role: "user", content: `Uploaded logo: ${file.name}` }]);
-      onApply({ design: { ...design, logo, logoClear: true } });
-      say(
-        contentLabel
-          ? "Added your logo to the middle of the QR code. Damage protection is set to High so it still scans with the logo covering part of it. Ask me to make it bigger or smaller."
-          : "Got your logo. Tell me what the QR code should do (a link, Wi‑Fi, contact…) and I’ll build it around the logo.",
-        "Logo added",
-      );
+      if (qr) {
+        qr.onApply({ design: { ...qr.design, logo, logoClear: true } });
+        say(
+          qr.contentLabel
+            ? "Added your logo to the middle of the QR code. Damage protection is set to High so it still scans with the logo covering part of it. Ask me to make it bigger or smaller."
+            : "Got your logo. Tell me what the QR code should do (a link, Wi‑Fi, contact…) and I’ll build it around the logo.",
+          "Logo added",
+        );
+      } else {
+        code?.onImage(logo);
+        say("Added your image above the code, so it never covers the code itself. Its height is in the Design section.", "Image added");
+      }
     } catch {
       say("I couldn’t read that image. Please try another PNG, JPG, WebP or SVG file.");
     } finally {
@@ -316,8 +379,9 @@ export default function QRAgent({
   };
 
   const removeLogo = () => {
-    onApply({ design: { ...design, logo: null } });
-    say("Removed the logo.", "Logo removed");
+    if (qr) qr.onApply({ design: { ...qr.design, logo: null } });
+    else code?.onImage(null);
+    say(qr ? "Removed the logo." : "Removed the image.", qr ? "Logo removed" : "Image removed");
   };
 
   const reset = () => {
@@ -339,8 +403,8 @@ export default function QRAgent({
 
   return (
     <CollapsibleCard
-      title="QR Agent"
-      subtitle="Describe what you need by typing or speaking. It designs QR codes, fills in any other code type and answers questions about the app."
+      title={copy.title}
+      subtitle={`Describe what you need by typing or speaking. ${copy.subject}`}
       icon={<Sparkles size={18} />}
       action={
         turns.length > 0 && (
@@ -356,7 +420,7 @@ export default function QRAgent({
             <div className="space-y-3">
               <p className="text-sm text-slate-400">Try one of these, or say it in your own words:</p>
               <div className="flex flex-col gap-2">
-                {SUGGESTIONS.map((s) => (
+                {copy.suggestions.map((s) => (
                   <button
                     key={s}
                     type="button"
@@ -467,7 +531,7 @@ export default function QRAgent({
                 send(input);
               }
             }}
-            placeholder={transcribing ? "Turning your voice into text…" : listening ? "Listening… pause for a moment when you’re done" : "e.g. A QR for my Instagram page with a pink gradient and hearts"}
+            placeholder={transcribing ? "Turning your voice into text…" : listening ? "Listening… pause for a moment when you’re done" : copy.placeholder}
             className="input min-h-[52px] flex-1 resize-none text-sm leading-relaxed"
           />
           <input ref={logoInputRef} type="file" accept={LOGO_ACCEPT} className="hidden" onChange={(e) => uploadLogo(e.target.files?.[0])} />
@@ -476,8 +540,8 @@ export default function QRAgent({
             onClick={() => logoInputRef.current?.click()}
             disabled={logoBusy}
             className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300 transition hover:text-white disabled:opacity-50"
-            title="Upload a logo (PNG, JPG, WebP or SVG)"
-            aria-label="Upload a logo"
+            title={qr ? "Upload a logo (PNG, JPG, WebP or SVG)" : "Upload an image to show above the code (PNG, JPG, WebP or SVG)"}
+            aria-label={qr ? "Upload a logo" : "Upload an image"}
           >
             {logoBusy ? <LoaderCircle size={18} className="animate-spin" /> : <ImagePlus size={18} />}
           </button>
@@ -500,11 +564,11 @@ export default function QRAgent({
           </button>
         </form>
 
-        {design.logo && (
+        {image && (
           <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-300">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={design.logo} alt="" className="size-7 rounded-md bg-white object-contain p-0.5" />
-            <span className="min-w-0 flex-1 truncate">Logo in the middle of the QR code</span>
+            <img src={image} alt="" className="size-7 rounded-md bg-white object-contain p-0.5" />
+            <span className="min-w-0 flex-1 truncate">{qr ? "Logo in the middle of the QR code" : "Image above the code"}</span>
             <button type="button" onClick={removeLogo} className="inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-slate-400 hover:bg-white/10 hover:text-white">
               <X size={13} /> Remove
             </button>

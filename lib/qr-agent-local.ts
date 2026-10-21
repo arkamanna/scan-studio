@@ -165,7 +165,10 @@ const CODE_WORDS: [RegExp, NonNullable<Reply["code"]>["tab"], string][] = [
 const HELP =
   "I can build QR codes for links, text, Wi‑Fi, contacts, WhatsApp, email, calls, SMS, locations and events, and style them (themes, dot shapes, gradients, captions). I can also fill in barcodes (EAN-13, UPC, Code 128…), Data Matrix, Aztec, PDF417, GS1 and postal codes, open the scanner, and download or print your QR. Just tell me what you need.";
 
-export function localAgent(messages: { role: string; content: string }[], askFirst: boolean, hasCode: boolean): AgentReply {
+/** The code tab the user is chatting in, when it isn't the QR tab. */
+export type CodeContext = { tab: string; type: string; value: string | null };
+
+export function localAgent(messages: { role: string; content: string }[], askFirst: boolean, hasCode: boolean, context: CodeContext | null = null): AgentReply {
   const users = messages.filter((m) => m.role === "user").map((m) => toEnglish(m.content));
   const last = users.at(-1) ?? "";
   const all = users.join("\n");
@@ -173,21 +176,36 @@ export function localAgent(messages: { role: string; content: string }[], askFir
 
   if (/what can you do|\bhelp\b|how does (this|the app) work|what is this app/i.test(last)) return reply({ status: "reply", message: HELP });
 
+  const actions: NonNullable<Reply["actions"]> = [];
+  if (/\b(download|save)\b/i.test(last)) actions.push(/\bsvg\b/i.test(last) ? "download_svg" : "download_png");
+  if (/\bprint\b/i.test(last)) actions.push("print");
   const go = /\b(open|go to|take me to|show me|switch to)\b/i.test(last) && TAB_WORDS.find(([re]) => re.test(last));
   if (go && !/\b(make|create|generate)\b/i.test(last)) return reply({ status: "reply", message: "Opening it for you.", navigate: go[1] });
 
-  const codeWord = !/\bqr\b/i.test(last) || /micro ?qr/i.test(last) ? CODE_WORDS.find(([re]) => re.test(last)) : undefined;
+  const named = !/\bqr\b/i.test(last) || /micro ?qr/i.test(last) ? CODE_WORDS.find(([re]) => re.test(last)) : undefined;
+  const codeWord: [RegExp, NonNullable<Reply["code"]>["tab"], string] | undefined =
+    named ??
+    (context && !/\bqr\b/i.test(last) && (QR_WORDS.test(last) || parseDesign(last) || /\d{4,}|["“']/.test(last))
+      ? [/./, context.tab as NonNullable<Reply["code"]>["tab"], context.type]
+      : undefined);
   if (codeWord) {
-    const value = pick(/["“']([^"”']+)["”']/, last) ?? pick(/(?:for|with|value|of|number|is)\s+([(\w][\w()\-./ ]*\w)/i, last) ?? pick(/(\d{4,})/, last);
+    const designOnly = !named && !/\d{4,}|["“']/.test(last) && Boolean(parseDesign(last));
+    const value = designOnly
+      ? (context?.value ?? null)
+      : pick(/["“']([^"”']+)["”']/, last) ??
+      pick(/(?:for|with|value|of|number|is)\s+([(\w][\w()\-./ ]*\w)/i, last)?.replace(/\s+(?:with|in|and|then|using|on)\b.*$/i, "") ??
+      pick(/(\d{4,})/, last) ??
+      (!named && context?.value ? context.value : null);
     if (!value) return reply({ status: "ask", message: "Sure. What value should it encode?", questions: [{ question: "Value", options: [] }] });
-    return reply({ status: "create", message: "Done. I opened that tab with your value; colours and options are in its Design section.", code: { tab: codeWord[1], type: codeWord[2], value } });
+    const look = parseDesign(last);
+    const design = look && (look.color || look.background || look.transparent)
+      ? { fillType: look.fillType, color: look.color, color2: look.color2, background: look.background, transparent: look.transparent, heading: null, caption: null }
+      : null;
+    return reply({ status: "create", message: "Done, your code is ready. Ask for changes like “make it blue” or “add a heading”; size and rotation are in the tab itself.", code: { tab: codeWord[1], type: codeWord[2], value, design }, actions: actions.length ? actions : null });
   }
 
   const content = parseContent(all);
   const design = parseDesign(last) ?? (asked ? null : parseDesign(all));
-  const actions: NonNullable<Reply["actions"]> = [];
-  if (/\b(download|save)\b/i.test(last)) actions.push(/\bsvg\b/i.test(last) ? "download_svg" : "download_png");
-  if (/\bprint\b/i.test(last)) actions.push("print");
   const eccLetter = pick(/error correction\s*(?:level\s*)?([LMQH])\b/i, last)?.toUpperCase() as Reply["ecc"] | undefined;
   const ecc = eccLetter ?? (/(high|max(imum)?|strong) error correction/i.test(last) ? "H" : null);
 

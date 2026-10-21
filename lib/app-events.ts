@@ -1,13 +1,20 @@
-/** Tiny window-event bus so the QR agent can drive other parts of the studio. */
+/** Tiny window-event bus so the agent can drive other parts of the studio. */
+import type { AgentContent, AgentDesign, CodeDesign } from "./qr-agent-schema";
+
 
 export type StudioTab = "qr" | "barcode" | "datamatrix" | "aztec" | "pdf417" | "gs1" | "postal" | "more" | "scan";
 export type QrAction = "download_png" | "download_svg" | "print" | "copy_image" | "share";
-export type CodeFill = { tab: Exclude<StudioTab, "qr" | "scan">; type: string; value: string };
+export type CodeTab = Exclude<StudioTab, "qr" | "scan">;
+export type CodeFill = { tab: CodeTab; type: string; value: string; design?: CodeDesign | null };
 
 type Events = {
   "ss:tab": { tab: StudioTab };
   "ss:fill": CodeFill;
   "ss:qr": { ecc?: "L" | "M" | "Q" | "H"; actions?: QrAction[] };
+  /** QR content/design made by the agent from another tab. */
+  "ss:qrapply": { content?: AgentContent | null; design?: AgentDesign | null };
+  /** Downloads/prints for the code in a code tab, run once it has rendered. */
+  "ss:code": { tab: CodeTab; actions: QrAction[] };
 };
 
 /** Fills sent before a tab's generator has mounted wait here until it picks them up. */

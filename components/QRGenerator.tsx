@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { CalendarDays, Contact, Sparkles, FileText, ImageIcon, Link2, Mail, MapPin, MessageCircle, MessageSquare, Phone, Type, Wifi } from "lucide-react";
 import QRPreview from "./QRPreview";
 import QRDesigner from "./QRDesigner";
@@ -9,6 +9,8 @@ import FileForm from "./FileForm";
 import { ContactForm, EmailForm, EventForm, LinkForm, LocationForm, PhoneForm, SmsForm, TextForm, WhatsAppForm, WifiForm } from "./forms";
 import type { OnResult, Result } from "@/lib/payloads";
 import { DEFAULT_DESIGN, type QrDesign } from "@/lib/qr-design";
+import { applyAgentDesign, contentToResult } from "@/lib/qr-agent";
+import { on } from "@/lib/app-events";
 
 type Mode = {
   id: string;
@@ -87,18 +89,33 @@ export default function QRGenerator() {
     setResult(r);
   }, []);
 
+  useEffect(
+    () =>
+      on("ss:qrapply", ({ content, design: d }) => {
+        const built = content ? contentToResult(content) : null;
+        if (built) {
+          setResult(built.result);
+          setAgentLabel(built.label);
+        }
+        if (d) setDesign((prev) => applyAgentDesign(prev, d));
+      }),
+    [],
+  );
+
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_400px] [&>*]:min-w-0">
       <div className="space-y-6">
         <QRAgent
-          design={design}
-          contentLabel={agentLabel ?? (result ? `${mode.label} (from the form)` : null)}
-          onApply={({ result: r, label, design: d }) => {
-            if (r) {
-              setResult(r);
-              setAgentLabel(label ?? "QR agent");
-            }
-            setDesign(d);
+          qr={{
+            design,
+            contentLabel: agentLabel ?? (result ? `${mode.label} (from the form)` : null),
+            onApply: ({ result: r, label, design: d }) => {
+              if (r) {
+                setResult(r);
+                setAgentLabel(label ?? "QR agent");
+              }
+              setDesign(d);
+            },
           }}
         />
         <section className="card p-4 sm:p-6">
