@@ -105,19 +105,6 @@ export default function QRGenerator() {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_400px] [&>*]:min-w-0">
       <div className="space-y-6">
-        <QRAgent
-          qr={{
-            design,
-            contentLabel: agentLabel ?? (result ? `${mode.label} (from the form)` : null),
-            onApply: ({ result: r, label, design: d }) => {
-              if (r) {
-                setResult(r);
-                setAgentLabel(label ?? "QR agent");
-              }
-              setDesign(d);
-            },
-          }}
-        />
         <section className="card p-4 sm:p-6">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Content</p>
           <div className="grid grid-cols-4 gap-2">
@@ -152,6 +139,19 @@ export default function QRGenerator() {
           </div>
         </section>
         <QRDesigner design={design} onChange={setDesign} />
+        <QRAgent
+          qr={{
+            design,
+            contentLabel: agentLabel ?? (result ? `${mode.label} (from the form)` : null),
+            onApply: ({ result: r, label, design: d }) => {
+              if (r) {
+                setResult(r);
+                setAgentLabel(label ?? "QR agent");
+              }
+              setDesign(d);
+            },
+          }}
+        />
       </div>
 
         <aside className="lg:sticky lg:top-6">

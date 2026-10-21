@@ -1,4 +1,6 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+"use client";
+
+import { useEffect, useRef, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { Globe, Languages, Mail, MapPin, MessageCircle, MessageSquare, Search, Send, Type } from "lucide-react";
 import type { Target } from "@/lib/payloads";
 
@@ -12,12 +14,29 @@ export function Field({ label, hint, children, className = "" }: { label: string
   );
 }
 
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={`input ${props.className ?? ""}`} />;
+/** True on phones and tablets, where focusing a field opens the keyboard. */
+export const isTouchDevice = () => typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+
+/**
+ * autoFocus that only runs on devices with a mouse: on phones it would open the keyboard (and zoom the page in on
+ * iOS) as soon as a form appears. preventScroll keeps the page where it is.
+ */
+function useAutoFocus<T extends HTMLElement>(autoFocus?: boolean) {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    if (autoFocus && !isTouchDevice()) ref.current?.focus({ preventScroll: true });
+  }, [autoFocus]);
+  return ref;
 }
 
-export function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={`input resize-y leading-relaxed ${props.className ?? ""}`} />;
+export function Input({ autoFocus, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+  const ref = useAutoFocus<HTMLInputElement>(autoFocus);
+  return <input ref={ref} {...props} className={`input ${props.className ?? ""}`} />;
+}
+
+export function TextArea({ autoFocus, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const ref = useAutoFocus<HTMLTextAreaElement>(autoFocus);
+  return <textarea ref={ref} {...props} className={`input resize-y leading-relaxed ${props.className ?? ""}`} />;
 }
 
 export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {

@@ -244,14 +244,6 @@ export default function CodeGenerator({ group }: { group: CodeGroup }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_400px] [&>*]:min-w-0">
       <div className="space-y-6">
-        <QRAgent
-          tab={group.id as CodeTab}
-          code={{
-            state: { tab: group.id, type: typeId, value: value || null, colour: fill, background: bg, transparent, heading: topText || null, hasImage: Boolean(image) },
-            image,
-            onImage: setImage,
-          }}
-        />
         <section className="card p-4 sm:p-6">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{group.heading}</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -364,6 +356,14 @@ export default function CodeGenerator({ group }: { group: CodeGroup }) {
             </div>
           </div>
         </CollapsibleCard>
+        <QRAgent
+          tab={group.id as CodeTab}
+          code={{
+            state: { tab: group.id, type: typeId, value: value || null, colour: fill, background: bg, transparent, heading: topText || null, hasImage: Boolean(image) },
+            image,
+            onImage: setImage,
+          }}
+        />
       </div>
 
       <aside className="lg:sticky lg:top-6">

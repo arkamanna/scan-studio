@@ -78,3 +78,12 @@ a:focus-visible {
   outline: 2px solid rgb(167 139 250);
   outline-offset: 2px;
 }
+
+/* iOS zooms the page in when a field with text under 16px gets focus, so phones get 16px fields. */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}

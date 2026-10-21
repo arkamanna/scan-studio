@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { isTouchDevice } from "./ui";
 import {
   Bold,
   CalendarClock,
@@ -139,6 +140,10 @@ export default function TextEditor({ value, onChange, placeholder }: { value: st
   }, []);
 
   useEffect(() => () => window.clearTimeout(typingTimer.current), []);
+
+  useEffect(() => {
+    if (!isTouchDevice()) area.current?.focus({ preventScroll: true });
+  }, []);
 
   const notify = (msg: string) => {
     setFlash(msg);
@@ -424,7 +429,6 @@ export default function TextEditor({ value, onChange, placeholder }: { value: st
       <div className="relative">
         <textarea
           ref={area}
-          autoFocus
           value={value}
           placeholder={placeholder}
           spellCheck
